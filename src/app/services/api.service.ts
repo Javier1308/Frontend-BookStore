@@ -1,4 +1,4 @@
-// services/api.service.ts
+// services/api.service.ts - UPDATED VERSION
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
@@ -8,6 +8,7 @@ export const API_CONFIG = {
   BOOKS_API_URL: "https://4f2enpqk9i.execute-api.us-east-1.amazonaws.com/dev",
   PURCHASES_API_URL: "https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev",
   IMAGES_API_URL: "https://tn43twlsd7.execute-api.us-east-1.amazonaws.com/dev",
+  ELASTICSEARCH_URL: "http://3.237.90.90", // Nueva IP de Elasticsearch
   DEFAULT_TENANT: "tenant1",
   TIMEOUT: 30000,
 };
@@ -45,32 +46,67 @@ export class ApiService {
   }
 
   // Books methods
-  getBooks(page: number = 1, limit: number = 12, category?: string): Observable<any> {
+  getBooks(page: number = 1, limit: number = 12, category?: string, sort?: string): Observable<any> {
     let url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books?tenant_id=${API_CONFIG.DEFAULT_TENANT}&page=${page}&limit=${limit}`;
     if (category) {
       url += `&category=${encodeURIComponent(category)}`;
     }
-    return this.http.get(url);
+    if (sort) {
+      url += `&sort=${sort}`;
+    }
+    return this.http.get(url, { headers: this.getHeaders() });
   }
 
-  searchBooks(query: string): Observable<any> {
-    const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/search?tenant_id=${API_CONFIG.DEFAULT_TENANT}&q=${encodeURIComponent(query)}`;
-    return this.http.get(url);
+  // Búsqueda normal con soporte para fuzzy
+  searchBooks(query: string, fuzzy: boolean = false): Observable<any> {
+    let url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/search?tenant_id=${API_CONFIG.DEFAULT_TENANT}&q=${encodeURIComponent(query)}`;
+    if (fuzzy) {
+      url += `&fuzzy=true`;
+    }
+    return this.http.get(url, { headers: this.getHeaders() });
+  }
+
+  // Búsqueda con autocompletado
+  getAutocompleteSuggestions(query: string): Observable<any> {
+    const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/search?tenant_id=${API_CONFIG.DEFAULT_TENANT}&q=${encodeURIComponent(query)}&suggest=true&limit=5`;
+    return this.http.get(url, { headers: this.getHeaders() });
+  }
+
+  // Búsqueda por prefijo
+  searchByPrefix(prefix: string): Observable<any> {
+    const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/search?tenant_id=${API_CONFIG.DEFAULT_TENANT}&q=${encodeURIComponent(prefix)}&prefix=true`;
+    return this.http.get(url, { headers: this.getHeaders() });
   }
 
   getBookById(bookId: string): Observable<any> {
     const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/${bookId}?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
-    return this.http.get(url);
+    return this.http.get(url, { headers: this.getHeaders() });
+  }
+
+  // CRUD Operations for Books
+  createBook(bookData: any): Observable<any> {
+    const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    return this.http.post(url, { ...bookData, tenant_id: API_CONFIG.DEFAULT_TENANT }, { headers: this.getHeaders() });
+  }
+
+  updateBook(bookId: string, bookData: any): Observable<any> {
+    const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/${bookId}?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    return this.http.put(url, bookData, { headers: this.getHeaders() });
+  }
+
+  deleteBook(bookId: string): Observable<any> {
+    const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/${bookId}?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    return this.http.delete(url, { headers: this.getHeaders() });
   }
 
   getBookRecommendations(limit: number = 8): Observable<any> {
     const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/recommendations?tenant_id=${API_CONFIG.DEFAULT_TENANT}&limit=${limit}`;
-    return this.http.get(url);
+    return this.http.get(url, { headers: this.getHeaders() });
   }
 
   getCategories(): Observable<any> {
     const url = `${API_CONFIG.BOOKS_API_URL}/api/v1/books/categories?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
-    return this.http.get(url);
+    return this.http.get(url, { headers: this.getHeaders() });
   }
 
   // Cart methods
@@ -101,6 +137,16 @@ export class ApiService {
     }, { headers: this.getHeaders() });
   }
 
+  removeFromCart(bookId: string): Observable<any> {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart/remove`;
+    return this.http.post(url, {
+      user_id: user.id,
+      tenant_id: API_CONFIG.DEFAULT_TENANT,
+      book_id: bookId
+    }, { headers: this.getHeaders() });
+  }
+
   clearCart(): Observable<any> {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart/clear`;
@@ -119,9 +165,15 @@ export class ApiService {
     }, { headers: this.getHeaders() });
   }
 
-  // Orders methods
+  // Orders/Purchases methods
   getOrders(userId: string): Observable<any> {
     const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/orders?user_id=${userId}&tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    return this.http.get(url, { headers: this.getHeaders() });
+  }
+
+  getPurchases(): Observable<any> {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/purchases?user_id=${user.id}&tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
     return this.http.get(url, { headers: this.getHeaders() });
   }
 
