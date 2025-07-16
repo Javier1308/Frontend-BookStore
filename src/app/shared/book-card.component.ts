@@ -1,8 +1,10 @@
 // src/app/shared/book-card.component.ts
 import { Component, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { API_CONFIG } from '../services/api.service'; // Import API_CONFIG
+import { ApiService } from '../services/api.service';
+import { API_CONFIG } from '../services/api.service';
 
 interface Book {
   id: string;
@@ -68,7 +70,8 @@ interface Book {
           </span>
         </div>
 
-        <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 min-h-[3.5rem]">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 min-h-[3.5rem] cursor-pointer hover:text-blue-600 transition-colors"
+            (click)="viewDetails()">
           {{book.title}}
         </h3>
 
@@ -114,6 +117,8 @@ export class BookCardComponent {
   @Input() book!: Book;
 
   private http = inject(HttpClient);
+  private router = inject(Router);
+  private apiService = inject(ApiService);
 
   isFavorite = false;
   addingToCart = false;
@@ -140,7 +145,7 @@ export class BookCardComponent {
     // For now, we'll prefix with the known S3 bucket URL from the documentation for book covers.
     const S3_BASE_URL = 'https://bookstore-images-dev-328458381283.s3.amazonaws.com/';
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const tenantId = user.tenant_id || API_CONFIG.DEFAULT_TENANT;
+    const tenantId = user.tenant_id || 'tenant1';
 
     // The image_url returned by the books API is expected to be a full URL, or a key.
     // If it's a key like 'tenant/books/book_123/cover_timestamp.jpeg', then we reconstruct.
@@ -201,7 +206,6 @@ export class BookCardComponent {
 
     this.addingToCart = true;
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const token = localStorage.getItem('token');
 
     if (!user.user_id) {
       alert('Please login to add items to cart');
@@ -209,24 +213,65 @@ export class BookCardComponent {
       return;
     }
 
-    const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart';
-
-    this.http.post(url, {
-      user_id: user.user_id,
-      tenant_id: user.tenant_id || 'tenant1',
+    console.log('Adding to cart - Book details:', {
       book_id: this.book.id,
-      quantity: 1
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+      user_id: user.user_id,
+      tenant_id: user.tenant_id,
+      book_title: this.book.title
+    });
+
+    this.apiService.addToCart(this.book.id, 1).subscribe({
       next: (response: any) => {
         console.log('Added to cart:', response);
-        // Show success message
         this.showMessage('Added to cart successfully!', 'success');
         this.addingToCart = false;
       },
       error: (error) => {
         console.error('Error adding to cart:', error);
+        console.error('Error details:', {
+          status: error.status,
+          message: error.error?.error,
+          book_id: this.book.id,
+          user_id: user.user_id,
+          tenant_id: user.tenant_id
+        });
+        
+        // Try with different tenant if book not found
+        if (error.status === 400 && error.error?.error?.includes('Book not found')) {
+          this.tryAddWithDifferentTenant();
+        } else {
+          this.showMessage(error.error?.error || 'Failed to add to cart', 'error');
+          this.addingToCart = false;
+        }
+      }
+    });
+  }
+
+  private tryAddWithDifferentTenant() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const token = localStorage.getItem('token');
+    const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart';
+    
+    console.log('Trying to add to cart with tenant1...');
+    
+    this.http.post(url, {
+      user_id: user.user_id,
+      tenant_id: 'tenant1',
+      book_id: this.book.id,
+      quantity: 1
+    }, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    }).subscribe({
+      next: (response: any) => {
+        console.log('Added to cart with tenant1:', response);
+        this.showMessage('Added to cart successfully!', 'success');
+        this.addingToCart = false;
+      },
+      error: (error) => {
+        console.error('Error adding with tenant1:', error);
         this.showMessage(error.error?.error || 'Failed to add to cart', 'error');
         this.addingToCart = false;
       }
@@ -243,20 +288,25 @@ export class BookCardComponent {
       return;
     }
 
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/favorites?tenant_id=tenant1`;
-
     if (this.isFavorite) {
-      // Remove from favorites (API doesn't have delete endpoint, so we'll just toggle state)
-      this.isFavorite = false;
-      this.favoriteLoading = false;
-      this.showMessage('Removed from favorites', 'success');
+      // Remove from favorites
+      this.apiService.removeFromFavorites(this.book.id).subscribe({
+        next: (response: any) => {
+          this.isFavorite = false;
+          this.favoriteLoading = false;
+          this.showMessage('Removed from favorites', 'success');
+        },
+        error: (error) => {
+          console.error('Error removing from favorites:', error);
+          // If API doesn't support removal, just toggle locally
+          this.isFavorite = false;
+          this.favoriteLoading = false;
+          this.showMessage('Removed from favorites', 'success');
+        }
+      });
     } else {
       // Add to favorites
-      this.http.post(url, {
-        book_id: this.book.id
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).subscribe({
+      this.apiService.addToFavorites(this.book.id).subscribe({
         next: (response: any) => {
           this.isFavorite = true;
           this.favoriteLoading = false;
@@ -281,15 +331,7 @@ export class BookCardComponent {
       return;
     }
 
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/wishlist?tenant_id=tenant1`;
-
-    this.http.post(url, {
-      book_id: this.book.id,
-      title: this.book.title,
-      author: this.book.author
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.addToWishlist(this.book.id, this.book.title, this.book.author).subscribe({
       next: (response: any) => {
         this.wishlistLoading = false;
         this.showMessage('Added to wishlist!', 'success');
@@ -303,19 +345,15 @@ export class BookCardComponent {
   }
 
   viewDetails() {
-    // Show book details in a modal or navigate to details page
-    alert(`Book Details:\n\nTitle: ${this.book.title}\nAuthor: ${this.book.author}\nISBN: ${this.book.isbn}\nCategory: ${this.book.category}\nPrice: $${this.book.price}\nStock: ${this.book.stock}\n\nDescription: ${this.book.description || 'No description available.'}`);
+    // Navigate to book detail page
+    this.router.navigate(['/book', this.book.id]);
   }
 
   private checkIfFavorite() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/favorites?tenant_id=tenant1`;
-
-    this.http.get<any>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.getFavorites().subscribe({
       next: (response) => {
         const favorites = response.items || [];
         this.isFavorite = favorites.some((fav: any) => fav.book_id === this.book.id);

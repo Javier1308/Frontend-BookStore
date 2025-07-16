@@ -3,6 +3,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { ApiService } from '../services/api.service';
 
 interface User {
   user_id: string;
@@ -192,7 +193,7 @@ interface WishlistItem {
                   <div>
                     <p class="font-medium text-gray-800">Order #{{order.order_id.slice(-8)}}</p>
                     <p class="text-sm text-gray-600">{{order.created_at | date:'mediumDate'}}</p>
-                    <p class="text-sm text-gray-500">{{order.items?.length || 0}} items</p>
+                    <p class="text-sm text-gray-500">{{order.items.length || 0}} items</p>
                   </div>
                   <div class="text-right">
                     <p class="font-semibold text-gray-800">\${{order.total.toFixed(2)}}</p>
@@ -278,6 +279,7 @@ interface WishlistItem {
 })
 export class ProfileComponent implements OnInit {
   private http = inject(HttpClient);
+  private apiService = inject(ApiService);
   
   user: User | null = null;
   orders: Order[] = [];
@@ -376,17 +378,13 @@ export class ProfileComponent implements OnInit {
 
   loadFavorites() {
     this.favoritesLoading = true;
-    const token = localStorage.getItem('token');
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/favorites?tenant_id=tenant1`;
     
-    this.http.get<any>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
-      next: (response) => {
+    this.apiService.getFavorites().subscribe({
+      next: (response: any) => {
         this.favorites = response.items || [];
         this.favoritesLoading = false;
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error('Error loading favorites:', error);
         this.favorites = [];
         this.favoritesLoading = false;
@@ -396,17 +394,13 @@ export class ProfileComponent implements OnInit {
 
   loadWishlist() {
     this.wishlistLoading = true;
-    const token = localStorage.getItem('token');
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/wishlist?tenant_id=tenant1`;
     
-    this.http.get<any>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
-      next: (response) => {
+    this.apiService.getWishlist().subscribe({
+      next: (response: any) => {
         this.wishlist = response.items || [];
         this.wishlistLoading = false;
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error('Error loading wishlist:', error);
         this.wishlist = [];
         this.wishlistLoading = false;

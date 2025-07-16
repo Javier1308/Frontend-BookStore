@@ -111,57 +111,67 @@ export class ApiService {
 
   // Cart methods
   getCart(userId: string): Observable<any> {
-    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart?user_id=${userId}&tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    // Always use tenant1 for cart operations since that's where books are stored
+    const tenantId = 'tenant1';
+    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart?user_id=${userId}&tenant_id=${tenantId}`;
     return this.http.get(url, { headers: this.getHeaders() });
   }
 
   addToCart(bookId: string, quantity: number = 1): Observable<any> {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart`;
+    
+    // Always use tenant1 for cart operations since that's where books are stored
+    const tenantId = 'tenant1';
+    
+    console.log('Adding to cart:', {
+      user_id: user.user_id,
+      tenant_id: tenantId,
+      book_id: bookId,
+      quantity
+    });
+    
     return this.http.post(url, {
-      user_id: user.id,
-      tenant_id: API_CONFIG.DEFAULT_TENANT,
+      user_id: user.user_id,
+      tenant_id: tenantId,
       book_id: bookId,
       quantity
     }, { headers: this.getHeaders() });
   }
 
   updateCartQuantity(bookId: string, quantity: number): Observable<any> {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart/update`;
-    return this.http.post(url, {
-      user_id: user.id,
-      tenant_id: API_CONFIG.DEFAULT_TENANT,
-      book_id: bookId,
-      quantity
-    }, { headers: this.getHeaders() });
+    // The API doesn't have a separate update endpoint
+    // According to the documentation, POST /api/v1/cart updates quantity if item exists
+    return this.addToCart(bookId, quantity);
   }
 
   removeFromCart(bookId: string): Observable<any> {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart/remove`;
-    return this.http.post(url, {
-      user_id: user.id,
-      tenant_id: API_CONFIG.DEFAULT_TENANT,
-      book_id: bookId
-    }, { headers: this.getHeaders() });
+    // Since the API doesn't have a remove endpoint, we need to use the clear cart approach
+    // or implement a custom removal logic
+    return this.clearCart();
   }
 
   clearCart(): Observable<any> {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart/clear`;
+    // Always use tenant1 for cart operations since that's where books are stored
+    const tenantId = 'tenant1';
+    
     return this.http.post(url, {
-      user_id: user.id,
-      tenant_id: API_CONFIG.DEFAULT_TENANT
+      user_id: user.user_id,
+      tenant_id: tenantId
     }, { headers: this.getHeaders() });
   }
 
   checkout(): Observable<any> {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/cart/checkout`;
+    const tenantId = user.tenant_id || API_CONFIG.DEFAULT_TENANT;
+    
     return this.http.post(url, {
-      user_id: user.id,
-      tenant_id: API_CONFIG.DEFAULT_TENANT
+      user_id: user.user_id,
+      tenant_id: tenantId
     }, { headers: this.getHeaders() });
   }
 
@@ -173,7 +183,7 @@ export class ApiService {
 
   getPurchases(): Observable<any> {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/purchases?user_id=${user.id}&tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    const url = `${API_CONFIG.PURCHASES_API_URL}/api/v1/purchases?user_id=${user.user_id}&tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
     return this.http.get(url, { headers: this.getHeaders() });
   }
 
@@ -204,15 +214,28 @@ export class ApiService {
     return this.http.post(url, { book_id: bookId }, { headers: this.getHeaders() });
   }
 
+  removeFromFavorites(bookId: string): Observable<any> {
+    const url = `${API_CONFIG.USERS_API_URL}/api/v1/favorites/${bookId}?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    return this.http.delete(url, { headers: this.getHeaders() });
+  }
+
   // Wishlist methods
   getWishlist(): Observable<any> {
     const url = `${API_CONFIG.USERS_API_URL}/api/v1/wishlist?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
     return this.http.get(url, { headers: this.getHeaders() });
   }
 
-  addToWishlist(bookId: string): Observable<any> {
+  addToWishlist(bookId: string, title?: string, author?: string): Observable<any> {
     const url = `${API_CONFIG.USERS_API_URL}/api/v1/wishlist?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
-    return this.http.post(url, { book_id: bookId }, { headers: this.getHeaders() });
+    const body: any = { book_id: bookId };
+    if (title) body.title = title;
+    if (author) body.author = author;
+    return this.http.post(url, body, { headers: this.getHeaders() });
+  }
+
+  removeFromWishlist(bookId: string): Observable<any> {
+    const url = `${API_CONFIG.USERS_API_URL}/api/v1/wishlist/${bookId}?tenant_id=${API_CONFIG.DEFAULT_TENANT}`;
+    return this.http.delete(url, { headers: this.getHeaders() });
   }
 
   updateCartItemsCount(count: number): void {

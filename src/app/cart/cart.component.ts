@@ -3,6 +3,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { ApiService } from '../services/api.service';
 
 interface CartItem {
   cart_item_id: string;
@@ -175,6 +176,7 @@ interface CartResponse {
 export class CartComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
+  private apiService = inject(ApiService);
   
   cart: CartResponse | null = null;
   loading = false;
@@ -191,7 +193,6 @@ export class CartComponent implements OnInit {
     this.error = '';
     
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const token = localStorage.getItem('token');
     
     if (!user.user_id) {
       this.error = 'User not found. Please login again.';
@@ -199,14 +200,12 @@ export class CartComponent implements OnInit {
       return;
     }
 
-    const url = `https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart?user_id=${user.user_id}&tenant_id=${user.tenant_id || 'tenant1'}`;
-    
-    this.http.get<CartResponse>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.getCart(user.user_id).subscribe({
       next: (response) => {
         this.cart = response;
         this.loading = false;
+        // Update cart items count in the service
+        this.apiService.updateCartItemsCount(response.item_count || 0);
       },
       error: (error) => {
         console.error('Error loading cart:', error);
@@ -225,25 +224,14 @@ export class CartComponent implements OnInit {
     this.updating = true;
     this.error = '';
     
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const token = localStorage.getItem('token');
-    const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart';
-    
-    this.http.post(url, {
-      user_id: user.user_id,
-      tenant_id: user.tenant_id || 'tenant1',
-      book_id: bookId,
-      quantity: newQuantity
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.updateCartQuantity(bookId, newQuantity).subscribe({
       next: () => {
         this.loadCart();
         this.updating = false;
       },
       error: (error) => {
         console.error('Error updating quantity:', error);
-        this.error = 'Failed to update quantity. Please try again.';
+        this.error = error.error?.error || 'Failed to update quantity. Please try again.';
         this.updating = false;
       }
     });
@@ -257,29 +245,56 @@ export class CartComponent implements OnInit {
     this.updating = true;
     this.error = '';
     
-    // For remove, we can set quantity to 0 or implement a specific remove endpoint
-    // Since the API doesn't have a specific remove endpoint, we'll use quantity 0
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const token = localStorage.getItem('token');
-    const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart';
+    // Since the API doesn't have a proper remove endpoint, we'll use the manual approach
+    this.removeItemManually(bookId);
+  }
+
+  private removeItemManually(bookIdToRemove: string) {
+    // Get current cart items
+    const currentItems = this.cart?.cart_items || [];
+    const itemsToKeep = currentItems.filter(item => item.book_id !== bookIdToRemove);
     
-    this.http.post(url, {
-      user_id: user.user_id,
-      tenant_id: user.tenant_id || 'tenant1',
-      book_id: bookId,
-      quantity: 0
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    // Clear the cart first
+    this.apiService.clearCart().subscribe({
       next: () => {
-        this.loadCart();
-        this.updating = false;
+        // Re-add items we want to keep
+        if (itemsToKeep.length > 0) {
+          this.reAddItems(itemsToKeep);
+        } else {
+          this.loadCart();
+          this.updating = false;
+        }
       },
       error: (error) => {
-        console.error('Error removing item:', error);
+        console.error('Error clearing cart:', error);
         this.error = 'Failed to remove item. Please try again.';
         this.updating = false;
       }
+    });
+  }
+
+  private reAddItems(items: any[]) {
+    let itemsAdded = 0;
+    const totalItems = items.length;
+    
+    items.forEach(item => {
+      this.apiService.addToCart(item.book_id, item.quantity).subscribe({
+        next: () => {
+          itemsAdded++;
+          if (itemsAdded === totalItems) {
+            this.loadCart();
+            this.updating = false;
+          }
+        },
+        error: (error) => {
+          console.error('Error re-adding item:', error);
+          itemsAdded++;
+          if (itemsAdded === totalItems) {
+            this.loadCart();
+            this.updating = false;
+          }
+        }
+      });
     });
   }
 
@@ -291,16 +306,7 @@ export class CartComponent implements OnInit {
     this.updating = true;
     this.error = '';
     
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const token = localStorage.getItem('token');
-    const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart/clear';
-    
-    this.http.post(url, {
-      user_id: user.user_id,
-      tenant_id: user.tenant_id || 'tenant1'
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.clearCart().subscribe({
       next: (response: any) => {
         console.log('Cart cleared:', response);
         this.loadCart();
@@ -318,6 +324,24 @@ export class CartComponent implements OnInit {
     this.checkoutLoading = true;
     this.error = '';
     
+    // First try the simple checkout method from API service
+    this.apiService.checkout().subscribe({
+      next: (response: any) => {
+        console.log('Checkout successful:', response);
+        this.showSuccessMessage('Order placed successfully!');
+        this.checkoutLoading = false;
+        this.router.navigate(['/profile']); // Redirect to orders
+      },
+      error: (error) => {
+        console.error('Error during simple checkout:', error);
+        
+        // Fallback to detailed checkout if simple checkout fails
+        this.detailedCheckout();
+      }
+    });
+  }
+
+  private detailedCheckout() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const token = localStorage.getItem('token');
     const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/checkout';
@@ -347,17 +371,30 @@ export class CartComponent implements OnInit {
       headers: { Authorization: `Bearer ${token}` }
     }).subscribe({
       next: (response: any) => {
-        console.log('Checkout successful:', response);
-        alert('Order placed successfully!');
+        console.log('Detailed checkout successful:', response);
+        this.showSuccessMessage('Order placed successfully!');
         this.checkoutLoading = false;
         this.router.navigate(['/profile']); // Redirect to orders
       },
       error: (error) => {
-        console.error('Error during checkout:', error);
+        console.error('Error during detailed checkout:', error);
         this.error = error.error?.error || 'Checkout failed. Please try again.';
         this.checkoutLoading = false;
       }
     });
+  }
+
+  private showSuccessMessage(message: string) {
+    const notification = document.createElement('div');
+    notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 4000);
   }
 
   continueShopping() {
