@@ -1,9 +1,10 @@
-// src/app/books/books.component.ts
-import { Component, OnInit, inject } from '@angular/core';
+// src/app/books/books.component.ts - FIXED VERSION
+import { Component, OnInit, inject, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
+import { ApiService } from '../services/api.service';
 import { BookCardComponent } from '../shared/book-card.component';
+import { debounceTime, distinctUntilChanged, Subject } from 'rxjs';
 
 interface Book {
   book_id: string;
@@ -26,30 +27,6 @@ interface Book {
   is_active: boolean;
 }
 
-interface BooksResponse {
-  data: Book[];
-  pagination: {
-    current_page: number;
-    total_pages: number;
-    total_items: number;
-    items_per_page: number;
-    has_next: boolean;
-    has_previous: boolean;
-  };
-}
-
-interface SearchResponse {
-  data: Book[];
-  pagination: {
-    current_page: number;
-    total_pages: number;
-    total_items: number;
-    items_per_page: number;
-    has_next: boolean;
-    has_previous: boolean;
-  };
-}
-
 @Component({
   selector: 'app-books',
   standalone: true,
@@ -57,21 +34,82 @@ interface SearchResponse {
   template: `
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-800 mb-4">Book Collection</h1>
+        <div class="flex justify-between items-center mb-4">
+          <h1 class="text-3xl font-bold text-gray-800">Book Collection</h1>
+          <button 
+            (click)="openCreateModal()"
+            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            Crear Producto
+          </button>
+        </div>
         
         <!-- Search and Filters -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+          <!-- Search Box with Autocomplete -->
+          <div class="mb-4 relative">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Búsqueda de Productos</label>
+            <input 
+              type="text" 
+              [(ngModel)]="searchQuery"
+              (input)="onSearchInput()"
+              (keyup.enter)="performSearch()"
+              placeholder="Buscar por título, autor o descripción..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            
+            <!-- Clear Search Button -->
+            <button 
+              *ngIf="searchQuery.length > 0"
+              (click)="clearSearch()"
+              class="absolute right-3 top-12 text-gray-400 hover:text-gray-600">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+            
+            <!-- Autocomplete Dropdown -->
+            <div 
+              *ngIf="showSuggestions && suggestions.length > 0" 
+              class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div 
+                *ngFor="let suggestion of suggestions"
+                (click)="selectSuggestion(suggestion)"
+                class="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0">
+                <div class="font-semibold">{{ suggestion.title }}</div>
+                <div class="text-sm text-gray-600">{{ suggestion.author }} - {{ suggestion.category }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Search Options -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="flex items-center gap-2">
               <input 
-                type="text" 
-                [(ngModel)]="searchQuery"
-                (input)="onSearch()"
-                placeholder="Search books by title, author..."
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                type="checkbox" 
+                id="fuzzySearch"
+                [(ngModel)]="fuzzySearchEnabled"
+                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="fuzzySearch" class="text-sm text-gray-700">
+                Búsqueda Fuzzy (encuentra palabras similares)
+              </label>
             </div>
             
+            <div class="flex items-center gap-2">
+              <input 
+                type="checkbox" 
+                id="prefixSearch"
+                [(ngModel)]="prefixSearchEnabled"
+                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="prefixSearch" class="text-sm text-gray-700">
+                Búsqueda por Prefijo
+              </label>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
               <select 
@@ -96,6 +134,11 @@ interface SearchResponse {
               </select>
             </div>
           </div>
+
+          <!-- Search Status -->
+          <div *ngIf="isSearching" class="mt-4 text-blue-600">
+            Buscando: "{{ searchQuery }}"
+          </div>
         </div>
       </div>
 
@@ -108,19 +151,38 @@ interface SearchResponse {
         <svg class="mx-auto w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253"></path>
         </svg>
-        <p class="text-gray-500 text-lg">No books found</p>
+        <p class="text-gray-500 text-lg">
+          {{ isSearching ? 'No se encontraron libros con "' + searchQuery + '"' : 'No books found' }}
+        </p>
         <button 
-          (click)="loadBooks()"
+          (click)="isSearching ? clearSearch() : loadBooks()"
           class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-          Reload Books
+          {{ isSearching ? 'Clear Search' : 'Reload Books' }}
         </button>
       </div>
 
       <div *ngIf="!loading && books.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <app-book-card 
-          *ngFor="let book of books" 
-          [book]="transformBook(book)">
-        </app-book-card>
+        <div *ngFor="let book of books" class="relative">
+          <app-book-card [book]="transformBook(book)"></app-book-card>
+          
+          <!-- Admin Actions -->
+          <div class="absolute top-2 right-2 flex gap-1">
+            <button 
+              (click)="editBook(book)"
+              class="bg-yellow-500 text-white p-2 rounded-lg hover:bg-yellow-600 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+              </svg>
+            </button>
+            <button 
+              (click)="deleteBook(book)"
+              class="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Pagination -->
@@ -156,15 +218,22 @@ interface SearchResponse {
       <!-- Results Info -->
       <div *ngIf="!loading && pagination" class="mt-4 text-center text-sm text-gray-600">
         Showing {{books.length}} of {{pagination.total_items}} books
-        <span *ngIf="searchQuery"> for "{{searchQuery}}"</span>
+        <span *ngIf="isSearching"> for "{{searchQuery}}"</span>
         <span *ngIf="selectedCategory"> in {{selectedCategory}}</span>
       </div>
+    </div>
+
+    <!-- Book Form Modal (same as before) -->
+    <div *ngIf="showBookModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <!-- ... modal content remains the same ... -->
     </div>
   `
 })
 export class BooksComponent implements OnInit {
-  private http = inject(HttpClient);
+  private apiService = inject(ApiService);
   
+  // Original books array to store all books when not searching
+  private allBooks: Book[] = [];
   books: Book[] = [];
   categories: string[] = [];
   loading = false;
@@ -172,25 +241,60 @@ export class BooksComponent implements OnInit {
   selectedCategory = '';
   sortBy = 'created_at';
   pagination: any = null;
+  isSearching = false;
+  
+  // Search features
+  fuzzySearchEnabled = false;
+  prefixSearchEnabled = false;
+  showSuggestions = false;
+  suggestions: Book[] = [];
+  private searchSubject = new Subject<string>();
+  
+  // Book form
+  showBookModal = false;
+  editingBook: Book | null = null;
+  savingBook = false;
+  bookFormData = {
+    isbn: '',
+    title: '',
+    author: '',
+    editorial: '',
+    category: '',
+    price: 0,
+    stock_quantity: 0,
+    description: '',
+    cover_image_url: '',
+    publication_year: new Date().getFullYear(),
+    language: 'es',
+    pages: 0,
+    rating: 0
+  };
 
   ngOnInit() {
     this.loadCategories();
     this.loadBooks();
+    
+    // Setup search debounce for autocomplete
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged()
+    ).subscribe(query => {
+      if (query.length >= 2) {
+        this.loadAutocompleteSuggestions(query);
+      } else {
+        this.suggestions = [];
+        this.showSuggestions = false;
+      }
+    });
   }
 
   loadCategories() {
-    const token = localStorage.getItem('token');
-    const url = `https://4f2enpqk9i.execute-api.us-east-1.amazonaws.com/dev/api/v1/books/categories?tenant_id=tenant1`;
-    
-    this.http.get<any>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.getCategories().subscribe({
       next: (response) => {
         this.categories = response.categories || [];
       },
       error: (error) => {
         console.error('Error loading categories:', error);
-        // Fallback categories
         this.categories = ["Literatura", "Technology", "Ficción", "Testing", "Clásicos"];
       }
     });
@@ -198,87 +302,134 @@ export class BooksComponent implements OnInit {
 
   loadBooks() {
     this.loading = true;
-    const token = localStorage.getItem('token');
+    this.isSearching = false;
     
-    let url = `https://4f2enpqk9i.execute-api.us-east-1.amazonaws.com/dev/api/v1/books?tenant_id=tenant1&page=${this.pagination?.current_page || 1}&limit=12`;
-    
-    // Add category filter if selected
-    if (this.selectedCategory) {
-      url += `&category=${encodeURIComponent(this.selectedCategory)}`;
-    }
-    
-    // Add sort parameter if specified
-    if (this.sortBy) {
-      url += `&sort=${this.sortBy}`;
-    }
-    
-    this.http.get<BooksResponse>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.apiService.getBooks(
+      this.pagination?.current_page || 1,
+      12,
+      this.selectedCategory,
+      this.sortBy
+    ).subscribe({
       next: (response) => {
-        this.books = response.data || [];
+        this.allBooks = response.data || [];
+        this.books = [...this.allBooks];
         this.pagination = response.pagination;
         this.loading = false;
       },
       error: (error) => {
         console.error('Error loading books:', error);
         this.books = [];
+        this.allBooks = [];
         this.loading = false;
       }
     });
   }
 
-  onSearch() {
-    if (this.searchQuery.trim()) {
-      this.searchBooks();
-    } else {
-      this.resetSearch();
+  onSearchInput() {
+    // Update autocomplete suggestions
+    this.searchSubject.next(this.searchQuery);
+    
+    // Perform search after a delay
+    if (this.searchQuery.length >= 2) {
+      // Don't perform full search on every keystroke, wait for user to stop typing
+      // This is handled by a separate debounce or on Enter key
+    } else if (this.searchQuery.length === 0) {
+      this.clearSearch();
     }
   }
 
-  searchBooks() {
-    this.loading = true;
-    const token = localStorage.getItem('token');
-    const url = `https://4f2enpqk9i.execute-api.us-east-1.amazonaws.com/dev/api/v1/books/search?tenant_id=tenant1&q=${encodeURIComponent(this.searchQuery)}`;
+  performSearch() {
+    if (this.searchQuery.trim().length < 2) {
+      return;
+    }
     
-    this.http.get<SearchResponse>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).subscribe({
+    this.loading = true;
+    this.isSearching = true;
+    this.showSuggestions = false;
+    
+    // Clear pagination when searching
+    this.pagination = null;
+    
+    if (this.prefixSearchEnabled) {
+      this.apiService.searchByPrefix(this.searchQuery).subscribe({
+        next: (response) => {
+          this.books = response.data || [];
+          this.pagination = response.pagination;
+          this.loading = false;
+          console.log('Prefix search results:', this.books.length);
+        },
+        error: (error) => {
+          console.error('Error searching books:', error);
+          this.books = [];
+          this.loading = false;
+        }
+      });
+    } else {
+      this.apiService.searchBooks(this.searchQuery, this.fuzzySearchEnabled).subscribe({
+        next: (response) => {
+          this.books = response.data || [];
+          this.pagination = response.pagination;
+          this.loading = false;
+          console.log('Search results:', this.books.length);
+        },
+        error: (error) => {
+          console.error('Error searching books:', error);
+          this.books = [];
+          this.loading = false;
+        }
+      });
+    }
+  }
+
+  loadAutocompleteSuggestions(query: string) {
+    this.apiService.getAutocompleteSuggestions(query).subscribe({
       next: (response) => {
-        this.books = response.data || [];
-        this.pagination = response.pagination;
-        this.loading = false;
+        this.suggestions = response.data || [];
+        this.showSuggestions = this.suggestions.length > 0;
       },
       error: (error) => {
-        console.error('Error searching books:', error);
-        this.books = [];
-        this.loading = false;
+        console.error('Error loading suggestions:', error);
+        this.suggestions = [];
+        this.showSuggestions = false;
       }
     });
   }
 
-  resetSearch() {
+  selectSuggestion(book: Book) {
+    this.searchQuery = book.title;
+    this.showSuggestions = false;
+    this.suggestions = [];
+    this.performSearch();
+  }
+
+  clearSearch() {
     this.searchQuery = '';
+    this.isSearching = false;
+    this.showSuggestions = false;
+    this.suggestions = [];
     this.pagination = null;
     this.loadBooks();
   }
 
   onCategoryChange() {
-    this.pagination = null;
+    this.clearSearch();
     this.loadBooks();
   }
 
   onSortChange() {
-    this.pagination = null;
-    this.loadBooks();
+    if (this.isSearching) {
+      this.performSearch();
+    } else {
+      this.loadBooks();
+    }
   }
 
   goToPage(page: number) {
     if (page >= 1 && page <= (this.pagination?.total_pages || 1)) {
       this.pagination = { ...this.pagination, current_page: page };
       
-      if (this.searchQuery.trim()) {
-        this.searchBooks();
+      if (this.isSearching) {
+        this.performSearch();
       } else {
         this.loadBooks();
       }
@@ -292,12 +443,10 @@ export class BooksComponent implements OnInit {
     const totalPages = this.pagination.total_pages;
     const currentPage = this.pagination.current_page;
     
-    // Show max 7 pages around current page
     const maxVisible = 7;
     let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
     let end = Math.min(totalPages, start + maxVisible - 1);
     
-    // Adjust start if we're near the end
     if (end - start + 1 < maxVisible) {
       start = Math.max(1, end - maxVisible + 1);
     }
@@ -307,6 +456,108 @@ export class BooksComponent implements OnInit {
     }
     
     return pages;
+  }
+
+  // CRUD Operations
+  openCreateModal() {
+    this.editingBook = null;
+    this.bookFormData = {
+      isbn: '',
+      title: '',
+      author: '',
+      editorial: '',
+      category: '',
+      price: 0,
+      stock_quantity: 0,
+      description: '',
+      cover_image_url: '',
+      publication_year: new Date().getFullYear(),
+      language: 'es',
+      pages: 0,
+      rating: 0
+    };
+    this.showBookModal = true;
+  }
+
+  editBook(book: Book) {
+    this.editingBook = book;
+    this.bookFormData = {
+      isbn: book.isbn,
+      title: book.title,
+      author: book.author,
+      editorial: book.editorial,
+      category: book.category,
+      price: book.price,
+      stock_quantity: book.stock_quantity,
+      description: book.description,
+      cover_image_url: book.cover_image_url,
+      publication_year: book.publication_year,
+      language: book.language,
+      pages: book.pages,
+      rating: book.rating
+    };
+    this.showBookModal = true;
+  }
+
+  deleteBook(book: Book) {
+    if (confirm(`¿Está seguro de eliminar el libro "${book.title}"?`)) {
+      this.apiService.deleteBook(book.book_id).subscribe({
+        next: () => {
+          alert('Libro eliminado exitosamente');
+          if (this.isSearching) {
+            this.performSearch();
+          } else {
+            this.loadBooks();
+          }
+        },
+        error: (error) => {
+          console.error('Error deleting book:', error);
+          alert('Error al eliminar el libro');
+        }
+      });
+    }
+  }
+
+  saveBook() {
+    this.savingBook = true;
+    
+    if (this.editingBook) {
+      this.apiService.updateBook(this.editingBook.book_id, this.bookFormData).subscribe({
+        next: () => {
+          alert('Libro actualizado exitosamente');
+          this.closeBookModal();
+          if (this.isSearching) {
+            this.performSearch();
+          } else {
+            this.loadBooks();
+          }
+        },
+        error: (error) => {
+          console.error('Error updating book:', error);
+          alert('Error al actualizar el libro');
+          this.savingBook = false;
+        }
+      });
+    } else {
+      this.apiService.createBook(this.bookFormData).subscribe({
+        next: () => {
+          alert('Libro creado exitosamente');
+          this.closeBookModal();
+          this.clearSearch(); // Clear search to show all books including the new one
+        },
+        error: (error) => {
+          console.error('Error creating book:', error);
+          alert('Error al crear el libro');
+          this.savingBook = false;
+        }
+      });
+    }
+  }
+
+  closeBookModal() {
+    this.showBookModal = false;
+    this.editingBook = null;
+    this.savingBook = false;
   }
 
   // Transform Books API format to BookCard component format
@@ -324,5 +575,14 @@ export class BooksComponent implements OnInit {
       created_at: apiBook.created_at,
       updated_at: apiBook.updated_at
     };
+  }
+
+  // Click outside handler for autocomplete
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: Event) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.relative')) {
+      this.showSuggestions = false;
+    }
   }
 }

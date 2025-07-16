@@ -2,6 +2,7 @@
 import { Component, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import { API_CONFIG } from '../services/api.service'; // Import API_CONFIG
 
 interface Book {
   id: string;
@@ -24,44 +25,42 @@ interface Book {
   template: `
     <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
       <div class="aspect-w-3 aspect-h-4 bg-gray-200 relative">
-        <img 
-          [src]="book.image_url || '/assets/book-placeholder.jpg'" 
+        <img
+          [src]="getFullImageUrl(book.image_url) || '/assets/book-placeholder.jpg'"
           [alt]="book.title"
           class="w-full h-48 object-cover"
           (error)="onImageError($event)">
-        
-        <!-- Favorite Button -->
-        <button 
+
+        <button
           (click)="toggleFavorite()"
           [disabled]="favoriteLoading"
           class="absolute top-2 right-2 p-2 bg-white bg-opacity-80 rounded-full hover:bg-opacity-100 transition-all">
-          <svg 
+          <svg
             class="w-5 h-5"
             [class.text-red-500]="isFavorite"
             [class.fill-current]="isFavorite"
             [class.text-gray-400]="!isFavorite"
-            fill="none" 
-            stroke="currentColor" 
+            fill="none"
+            stroke="currentColor"
             viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
           </svg>
         </button>
 
-        <!-- Stock Badge -->
         <div class="absolute top-2 left-2">
-          <span 
+          <span
             *ngIf="book.stock <= 5 && book.stock > 0"
             class="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
             Only {{book.stock}} left
           </span>
-          <span 
+          <span
             *ngIf="book.stock === 0"
             class="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
             Out of Stock
           </span>
         </div>
       </div>
-      
+
       <div class="p-6">
         <div class="mb-2">
           <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
@@ -72,11 +71,11 @@ interface Book {
         <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 min-h-[3.5rem]">
           {{book.title}}
         </h3>
-        
+
         <p class="text-gray-600 mb-2 text-sm">by {{book.author}}</p>
-        
+
         <p class="text-xs text-gray-500 mb-3">ISBN: {{book.isbn}}</p>
-        
+
         <div class="flex items-center justify-between mb-4">
           <span class="text-2xl font-bold text-blue-600">\${{book.price}}</span>
           <div class="text-right">
@@ -85,7 +84,7 @@ interface Book {
         </div>
 
         <div class="space-y-2">
-          <button 
+          <button
             (click)="addToCart()"
             [disabled]="book.stock === 0 || addingToCart"
             class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
@@ -93,14 +92,14 @@ interface Book {
           </button>
 
           <div class="grid grid-cols-2 gap-2">
-            <button 
+            <button
               (click)="addToWishlist()"
               [disabled]="wishlistLoading"
               class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
               {{wishlistLoading ? '...' : 'Wishlist'}}
             </button>
-            
-            <button 
+
+            <button
               (click)="viewDetails()"
               class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
               Details
@@ -113,9 +112,9 @@ interface Book {
 })
 export class BookCardComponent {
   @Input() book!: Book;
-  
+
   private http = inject(HttpClient);
-  
+
   isFavorite = false;
   addingToCart = false;
   favoriteLoading = false;
@@ -130,13 +129,80 @@ export class BookCardComponent {
     event.target.src = '/assets/book-placeholder.jpg';
   }
 
+  // Method to construct the full image URL
+  getFullImageUrl(imageUrl: string | undefined): string {
+    if (!imageUrl || imageUrl.startsWith('http')) {
+      return imageUrl || '';
+    }
+    // Assuming image_url from the book object is just the S3 key relative to the tenant
+    // We need to construct the full URL using the IMAGES_API_URL or the base S3 bucket URL directly if known.
+    // Based on the Images API documentation, the public URL is directly from S3.
+    // For now, we'll prefix with the known S3 bucket URL from the documentation for book covers.
+    const S3_BASE_URL = 'https://bookstore-images-dev-328458381283.s3.amazonaws.com/';
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const tenantId = user.tenant_id || API_CONFIG.DEFAULT_TENANT;
+
+    // The image_url returned by the books API is expected to be a full URL, or a key.
+    // If it's a key like 'tenant/books/book_123/cover_timestamp.jpeg', then we reconstruct.
+    // If the image_url is just a filename, you'd need the book_id and tenant to construct.
+    // Based on the provided API documentation and data, the ideal scenario is that
+    // the 'cover_image_url' from the books API is already the complete S3 public URL.
+    // If it's not, and it's just a path segment, then this logic below tries to build it.
+    // However, if the backend sends empty, this won't help.
+
+    // Given the API response structure, it is more likely `cover_image_url` is intended to be the full URL.
+    // If it's relative, it would look something like 'tenant/books/book_id/filename.jpg'.
+    // The images API doc shows full URLs in its successful responses.
+    // So, if the imageUrl is not starting with 'http', it means it's malformed or not a direct URL.
+    // The simplest fix for the given problem (image_a7fc82.jpg showing '<empty>')
+    // is ensuring the backend provides a valid, full URL in `cover_image_url`.
+    // The code below is a *safeguard* if the backend provides a relative path,
+    // but the primary issue is missing/invalid URLs from the API itself.
+
+    // A more robust approach might be to check if imageUrl is just a filename
+    // and then use the IMAGES_API_URL and book_id to request a presigned URL or
+    // construct the full public URL from the S3 key if the API returns just the key.
+
+    // For now, let's assume `image_url` *might* contain just the key or a path relative to the bucket.
+    // The `DOCUMENTACION_IMAGES_API.md` shows the S3 key includes the tenant ID, e.g., 'tenant/books/book_123/cover_...'
+    // So, if the `image_url` is already a full S3 path, we use it directly.
+    // If it's a relative path like 'books/book_id/filename.jpg', we need to prepend the base.
+    // If it's just a filename, then the backend should return the full path or provide enough info.
+
+    // Given the `DOCUMENTACION_IMAGES_API.md` for 'UPLOAD BOOK COVER IMAGE' response,
+    // `image_url` is a *full S3 URL*.
+    // So, the `transformBook` in `dashboard.component.ts` should ideally just pass that full URL.
+    // The problem from image_a7fc82.jpg is that `cover_image_url` is `<empty>`.
+    // This `getFullImageUrl` function is only useful if the backend sends relative paths.
+    // But since the API returns full URLs, the main fix is to ensure the backend actually provides them.
+    // However, adding this check for non-http URLs is a good defensive measure.
+
+    // If imageUrl is already a full URL, return it directly.
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+
+    // If it's just a path fragment, try to construct a full S3 URL based on known structure.
+    // Example: 'book_123/cover_20250713_142037.jpeg' (if backend only gives filename/partial path)
+    // This assumes the `imageUrl` property in `Book` interface is just the filename/partial key.
+    // If `book.image_url` is the S3 key like `tenant1/books/book_id/filename.jpg`, then
+    // `return S3_BASE_URL + imageUrl;` might be sufficient.
+    // If the `image_url` from the `Book` interface is intended to be *just* the filename,
+    // then the construction needs to include `tenantId` and `book.id`.
+    // Based on the provided image, the `cover_image_url` in the database is directly problematic.
+
+    // For now, let's just use the imageUrl directly and rely on the fallback if it's invalid.
+    // The core issue is that `apiBook.cover_image_url` is often empty in the database.
+    return imageUrl; // Keep it as is, and let onImageError handle if it's invalid/empty
+  }
+
   addToCart() {
     if (this.book.stock === 0) return;
-    
+
     this.addingToCart = true;
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const token = localStorage.getItem('token');
-    
+
     if (!user.user_id) {
       alert('Please login to add items to cart');
       this.addingToCart = false;
@@ -144,7 +210,7 @@ export class BookCardComponent {
     }
 
     const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart';
-    
+
     this.http.post(url, {
       user_id: user.user_id,
       tenant_id: user.tenant_id || 'tenant1',
@@ -170,7 +236,7 @@ export class BookCardComponent {
   toggleFavorite() {
     this.favoriteLoading = true;
     const token = localStorage.getItem('token');
-    
+
     if (!token) {
       alert('Please login to manage favorites');
       this.favoriteLoading = false;
@@ -178,7 +244,7 @@ export class BookCardComponent {
     }
 
     const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/favorites?tenant_id=tenant1`;
-    
+
     if (this.isFavorite) {
       // Remove from favorites (API doesn't have delete endpoint, so we'll just toggle state)
       this.isFavorite = false;
@@ -208,7 +274,7 @@ export class BookCardComponent {
   addToWishlist() {
     this.wishlistLoading = true;
     const token = localStorage.getItem('token');
-    
+
     if (!token) {
       alert('Please login to manage wishlist');
       this.wishlistLoading = false;
@@ -216,7 +282,7 @@ export class BookCardComponent {
     }
 
     const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/wishlist?tenant_id=tenant1`;
-    
+
     this.http.post(url, {
       book_id: this.book.id,
       title: this.book.title,
@@ -246,7 +312,7 @@ export class BookCardComponent {
     if (!token) return;
 
     const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/favorites?tenant_id=tenant1`;
-    
+
     this.http.get<any>(url, {
       headers: { Authorization: `Bearer ${token}` }
     }).subscribe({
@@ -268,7 +334,7 @@ export class BookCardComponent {
       notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
       notification.textContent = message;
       document.body.appendChild(notification);
-      
+
       setTimeout(() => {
         document.body.removeChild(notification);
       }, 3000);
