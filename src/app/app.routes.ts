@@ -8,6 +8,7 @@ import { FavoritesComponent } from './favorites/favorites.component';
 import { WishlistComponent } from './wishlist/wishlist.component';
 import { OrdersComponent } from './orders/orders.component';
 import { AnalyticsComponent } from './analytics/analytics.component';
+import { ProfileComponent } from './profile/profile.component';
 
 export const routes: Routes = [
   { path: '', component: HomeComponent },
@@ -18,6 +19,7 @@ export const routes: Routes = [
   { path: 'wishlist', component: WishlistComponent },
   { path: 'orders', component: OrdersComponent },
   { path: 'analytics', component: AnalyticsComponent },
+  { path: 'profile', component: ProfileComponent },
   { path: 'auth', component: AuthComponent },
   { path: '**', redirectTo: '' }
 ];

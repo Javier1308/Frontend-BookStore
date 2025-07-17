@@ -37,22 +37,77 @@ interface Book {
       <!-- Search and Filter Section -->
       <div class="mb-8">
         <div class="flex flex-col md:flex-row gap-4 mb-6">
-          <div class="flex-1">
+          <div class="flex-1 relative">
             <input 
               type="text" 
               [(ngModel)]="searchQuery"
+              (input)="onSearchInput()"
               (keyup.enter)="searchBooks()"
-              placeholder="Search books by title, author, or category..."
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              (focus)="showSuggestions = suggestions.length > 0"
+              placeholder="Search books by title, author, category, or ISBN..."
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12">
+            
+            <!-- Search type indicator -->
+            <div class="absolute right-12 top-1/2 transform -translate-y-1/2">
+              <span *ngIf="isISBNSearch()" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">ISBN</span>
+              <span *ngIf="!isISBNSearch()" class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">TEXT</span>
+            </div>
+            
+            <!-- Search suggestions dropdown -->
+            <div *ngIf="showSuggestions && suggestions.length > 0" 
+                 class="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-96 overflow-y-auto">
+              <div *ngFor="let suggestion of suggestions" 
+                   (click)="selectSuggestion(suggestion)"
+                   class="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0">
+                <div class="flex items-center space-x-3">
+                  <img [src]="suggestion.cover_image_url || '/assets/book-placeholder.jpg'" 
+                       [alt]="suggestion.title"
+                       class="w-10 h-10 object-cover rounded">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 truncate">{{ suggestion.title }}</p>
+                    <p class="text-sm text-gray-500 truncate">{{ suggestion.author }}</p>
+                    <p class="text-xs text-gray-400">ISBN: {{ suggestion.isbn }}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-sm font-medium text-blue-600">\${{ suggestion.price?.toFixed(2) }}</p>
+                    <p class="text-xs text-gray-500">{{ suggestion.category }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <button 
-            (click)="searchBooks()"
-            class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-            Search
-          </button>
+          
+          <div class="flex space-x-2">
+            <button 
+              (click)="searchBooks()"
+              class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+              Search
+            </button>
+            <button 
+              (click)="clearSearch()"
+              class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors">
+              Clear
+            </button>
+          </div>
         </div>
         
-        <div class="flex flex-wrap gap-4">
+        <!-- Search info and filters -->
+        <div class="flex flex-wrap gap-4 items-center">
+          <div class="flex items-center space-x-2">
+            <span class="text-sm text-gray-600">Search type:</span>
+            <button 
+              (click)="toggleSearchType()"
+              class="px-3 py-1 text-xs rounded-full border transition-colors"
+              [class.bg-blue-100]="searchType === 'isbn'"
+              [class.text-blue-800]="searchType === 'isbn'"
+              [class.border-blue-300]="searchType === 'isbn'"
+              [class.bg-gray-100]="searchType === 'text'"
+              [class.text-gray-600]="searchType === 'text'"
+              [class.border-gray-300]="searchType === 'text'">
+              {{ searchType === 'isbn' ? 'ISBN Search' : 'Text Search' }}
+            </button>
+          </div>
+          
           <select 
             [(ngModel)]="selectedCategory"
             (change)="filterByCategory()"
@@ -71,6 +126,13 @@ interface Book {
             <option value="rating">Rating</option>
             <option value="created_at">Date Added</option>
           </select>
+          
+          <!-- Search results info -->
+          <div *ngIf="isSearching" class="text-sm text-gray-600">
+            <span class="font-medium">{{ books.length }}</span> results for 
+            <span class="font-medium">"{{ searchQuery }}"</span>
+            <span *ngIf="searchType === 'isbn'" class="text-blue-600">(ISBN search)</span>
+          </div>
         </div>
       </div>
 
@@ -89,11 +151,21 @@ interface Book {
 
       <!-- Empty State -->
       <div *ngIf="!loading && books.length === 0" class="text-center py-12">
-        <p class="text-gray-500 text-lg">No books found</p>
+        <div class="mx-auto w-16 h-16 text-gray-400 mb-4">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.29-1.1-5.597-2.709M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <p class="text-gray-500 text-lg">
+          {{ isSearching ? 'No books found for your search' : 'No books found' }}
+        </p>
+        <p class="text-gray-400 mb-4">
+          {{ isSearching ? 'Try different keywords or search by ISBN' : 'Try browsing our categories' }}
+        </p>
         <button 
-          (click)="loadBooks()"
+          (click)="clearSearch()"
           class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-          Load All Books
+          {{ isSearching ? 'Clear Search' : 'Load All Books' }}
         </button>
       </div>
 
@@ -141,6 +213,7 @@ export class BooksComponent implements OnInit {
   selectedCategory = '';
   sortBy = 'created_at';
   pagination: any = null;
+  searchType: 'text' | 'isbn' = 'text';
   isSearching = false;
   
   // Search features
@@ -178,6 +251,10 @@ export class BooksComponent implements OnInit {
       }
       if (params['search']) {
         this.searchQuery = params['search'];
+      }
+      if (params['isbn']) {
+        this.searchQuery = params['isbn'];
+        this.searchType = 'isbn';
       }
       this.loadBooks();
     });
@@ -257,15 +334,41 @@ export class BooksComponent implements OnInit {
   }
 
   onSearchInput() {
+    // Auto-detect if user is typing an ISBN
+    if (this.isISBNLike(this.searchQuery)) {
+      this.searchType = 'isbn';
+    } else if (this.searchQuery.length > 0) {
+      this.searchType = 'text';
+    }
+
     // Update autocomplete suggestions
     this.searchSubject.next(this.searchQuery);
     
-    // Perform search after a delay
-    if (this.searchQuery.length >= 2) {
-      // Don't perform full search on every keystroke, wait for user to stop typing
-      // This is handled by a separate debounce or on Enter key
-    } else if (this.searchQuery.length === 0) {
+    // Clear search if empty
+    if (this.searchQuery.length === 0) {
       this.clearSearch();
+    }
+  }
+
+  // Check if the query looks like an ISBN
+  isISBNLike(query: string): boolean {
+    // Remove hyphens and spaces
+    const cleanQuery = query.replace(/[-\s]/g, '');
+    // Check if it looks like an ISBN (10 or 13 digits, possibly with 'X')
+    return /^(?:\d{9}[\dX]|\d{13})$/.test(cleanQuery) || 
+           /^(?:\d{3}-?\d{1,5}-?\d{1,7}-?\d{1,7}-?[\dX]|\d{1,5}-?\d{1,7}-?\d{1,7}-?[\dX])$/.test(query);
+  }
+
+  // Check if current search is ISBN type
+  isISBNSearch(): boolean {
+    return this.searchType === 'isbn' || this.isISBNLike(this.searchQuery);
+  }
+
+  // Toggle between search types
+  toggleSearchType() {
+    this.searchType = this.searchType === 'text' ? 'isbn' : 'text';
+    if (this.searchQuery.length > 0) {
+      this.performSearch();
     }
   }
 
@@ -275,7 +378,8 @@ export class BooksComponent implements OnInit {
   }
 
   performSearch() {
-    if (this.searchQuery.trim().length < 2) {
+    if (this.searchQuery.trim().length === 0) {
+      this.clearSearch();
       return;
     }
     
@@ -286,12 +390,52 @@ export class BooksComponent implements OnInit {
     // Clear pagination when searching
     this.pagination = null;
     
+    // Determine search method based on search type or auto-detection
+    if (this.searchType === 'isbn' || this.isISBNLike(this.searchQuery)) {
+      this.searchByISBN();
+    } else {
+      this.searchByText();
+    }
+  }
+
+  private searchByISBN() {
+    // Clean the ISBN (remove hyphens and spaces)
+    const cleanISBN = this.searchQuery.replace(/[-\s]/g, '');
+    
+    console.log('Searching by ISBN:', cleanISBN);
+    
+    this.apiService.searchByISBN(cleanISBN).subscribe({
+      next: (book) => {
+        // Single book result for ISBN search
+        this.books = book ? [this.transformBook(book)] : [];
+        this.pagination = {
+          current_page: 1,
+          total_pages: 1,
+          total_items: this.books.length,
+          items_per_page: 1,
+          has_next: false,
+          has_previous: false
+        };
+        this.loading = false;
+        console.log('ISBN search results:', this.books.length);
+      },
+      error: (error) => {
+        console.error('Error searching by ISBN:', error);
+        this.books = [];
+        this.loading = false;
+      }
+    });
+  }
+
+  private searchByText() {
+    console.log('Searching by text:', this.searchQuery);
+    
     this.apiService.searchBooks(this.searchQuery, this.fuzzySearchEnabled, 1, 12).subscribe({
       next: (response) => {
         this.books = this.transformBooks(response.data || []);
         this.pagination = response.pagination;
         this.loading = false;
-        console.log('Search results:', this.books.length);
+        console.log('Text search results:', this.books.length);
       },
       error: (error) => {
         console.error('Error searching books:', error);
@@ -299,6 +443,28 @@ export class BooksComponent implements OnInit {
         this.loading = false;
       }
     });
+  }
+
+  private transformBook(apiBook: any): any {
+    return {
+      book_id: apiBook.book_id,
+      title: apiBook.title || 'Unknown Title',
+      author: apiBook.author || 'Unknown Author',
+      isbn: apiBook.isbn || '',
+      category: apiBook.category || 'General',
+      price: parseFloat(apiBook.price) || 0,
+      description: apiBook.description || '',
+      cover_image_url: apiBook.cover_image_url || apiBook.image_url || '',
+      stock_quantity: parseInt(apiBook.stock_quantity) || parseInt(apiBook.stock) || 0,
+      publication_year: apiBook.publication_year || 0,
+      language: apiBook.language || 'en',
+      pages: apiBook.pages || 0,
+      rating: parseFloat(apiBook.rating) || 0,
+      tenant_id: apiBook.tenant_id || '',
+      created_at: apiBook.created_at || '',
+      updated_at: apiBook.updated_at || '',
+      is_active: apiBook.is_active !== false
+    };
   }
 
   loadAutocompleteSuggestions(query: string) {
@@ -315,8 +481,9 @@ export class BooksComponent implements OnInit {
     });
   }
 
-  selectSuggestion(book: Book) {
-    this.searchQuery = book.title;
+  selectSuggestion(book: any) {
+    this.searchQuery = book.isbn || book.title;
+    this.searchType = book.isbn ? 'isbn' : 'text';
     this.showSuggestions = false;
     this.suggestions = [];
     this.performSearch();
@@ -324,6 +491,7 @@ export class BooksComponent implements OnInit {
 
   clearSearch() {
     this.searchQuery = '';
+    this.searchType = 'text';
     this.isSearching = false;
     this.showSuggestions = false;
     this.suggestions = [];

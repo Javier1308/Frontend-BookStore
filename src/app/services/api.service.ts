@@ -206,6 +206,18 @@ export class ApiService {
     );
   }
 
+  searchByISBN(isbn: string): Observable<Book | null> {
+    return this.http.get<Book>(
+      `${this.BOOKS_API}/api/v1/books/by-isbn/${isbn}?tenant_id=${this.TENANT_ID}`,
+      { headers: this.getAuthHeaders() }
+    ).pipe(
+      catchError(error => {
+        console.error('Error searching by ISBN:', error);
+        return of(null);
+      })
+    );
+  }
+
   searchBooks(query: string, fuzzyEnabled: boolean = false, page: number = 1, limit: number = 20): Observable<BookSearchResponse> {
     let params = new HttpParams()
       .set('tenant_id', this.TENANT_ID)
@@ -566,6 +578,74 @@ export class ApiService {
     return of({ 
       error: 'Clear all wishlist is not supported by the Users API',
       limitation: true 
+    });
+  }
+
+  // ========================
+  // PROFILE METHODS - FIXED VERSION
+  // ========================
+
+  getProfile(): Observable<any> {
+    return this.http.get(
+      `${this.USERS_API}/api/v1/profile?tenant_id=${this.TENANT_ID}`,
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  updateProfile(profileData: any): Observable<any> {
+    return this.http.put<any>(
+      `${this.USERS_API}/api/v1/profile?tenant_id=${this.TENANT_ID}`,
+      profileData,
+      { headers: this.getAuthHeaders() }
+    ).pipe(
+      tap((response: any) => {
+        // Update current user in localStorage
+        const currentUser = this.getCurrentUser();
+        if (currentUser && response.user) {
+          const updatedUser = { ...currentUser, ...response.user };
+          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+          this.currentUserSubject.next(updatedUser);
+        }
+      })
+    );
+  }
+
+  changePassword(currentPassword: string, newPassword: string): Observable<any> {
+    return this.http.post(
+      `${this.USERS_API}/api/v1/change-password?tenant_id=${this.TENANT_ID}`,
+      { 
+        current_password: currentPassword,
+        new_password: newPassword 
+      },
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  uploadProfileImage(file: File): Observable<any> {
+    // Create a more realistic simulation
+    return new Observable(observer => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        // Simulate upload delay
+        setTimeout(() => {
+          const imageUrl = e.target?.result as string;
+          observer.next({ 
+            message: 'Profile image uploaded successfully',
+            profile_image_url: imageUrl
+          });
+          observer.complete();
+        }, 1000);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  removeProfileImage(): Observable<any> {
+    return new Observable(observer => {
+      setTimeout(() => {
+        observer.next({ message: 'Profile image removed successfully' });
+        observer.complete();
+      }, 500);
     });
   }
 
