@@ -2,102 +2,95 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { ApiService } from '../services/api.service';
 
 @Component({
   selector: 'app-auth',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div class="max-w-md w-full">
-        <div class="bg-white rounded-xl shadow-2xl p-8">
-          <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">BookStore Pro</h1>
-            <p class="text-gray-600">{{isLogin ? 'Welcome back!' : 'Create your account'}}</p>
-          </div>
+    <div class="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div class="sm:mx-auto sm:w-full sm:max-w-md">
+        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          {{ isLogin ? 'Sign in to your account' : 'Create your account' }}
+        </h2>
+      </div>
 
-          <form (ngSubmit)="onSubmit()" class="space-y-6">
-            <div *ngIf="!isLogin" class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                <input 
-                  type="text" 
-                  [(ngModel)]="formData.username" 
-                  name="username"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required>
-              </div>
-              
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
-                  <input 
-                    type="text" 
-                    [(ngModel)]="formData.first_name" 
-                    name="first_name"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
-                  <input 
-                    type="text" 
-                    [(ngModel)]="formData.last_name" 
-                    name="last_name"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required>
-                </div>
-              </div>
-              
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Phone (Optional)</label>
-                <input 
-                  type="tel" 
-                  [(ngModel)]="formData.phone" 
-                  name="phone"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-              </div>
+      <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div class="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          <form (ngSubmit)="onSubmit()" #authForm="ngForm">
+            <div *ngIf="!isLogin">
+              <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+              <input 
+                type="text" 
+                id="username" 
+                name="username"
+                [(ngModel)]="formData.username"
+                required
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
 
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <div *ngIf="!isLogin" class="mt-6">
+              <label for="firstName" class="block text-sm font-medium text-gray-700">First Name</label>
+              <input 
+                type="text" 
+                id="firstName" 
+                name="firstName"
+                [(ngModel)]="formData.first_name"
+                required
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+
+            <div *ngIf="!isLogin" class="mt-6">
+              <label for="lastName" class="block text-sm font-medium text-gray-700">Last Name</label>
+              <input 
+                type="text" 
+                id="lastName" 
+                name="lastName"
+                [(ngModel)]="formData.last_name"
+                required
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+
+            <div [class.mt-6]="!isLogin">
+              <label for="email" class="block text-sm font-medium text-gray-700">Email address</label>
               <input 
                 type="email" 
-                [(ngModel)]="formData.email" 
+                id="email" 
                 name="email"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required>
+                [(ngModel)]="formData.email"
+                required
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
 
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+            <div class="mt-6">
+              <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
               <input 
                 type="password" 
-                [(ngModel)]="formData.password" 
+                id="password" 
                 name="password"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required>
+                [(ngModel)]="formData.password"
+                required
+                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
 
-            <div *ngIf="error" class="p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p class="text-red-600 text-sm">{{error}}</p>
+            <div class="mt-6">
+              <button 
+                type="submit" 
+                [disabled]="loading"
+                class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
+                {{ loading ? 'Please wait...' : (isLogin ? 'Sign in' : 'Sign up') }}
+              </button>
             </div>
-
-            <button 
-              type="submit" 
-              [disabled]="loading"
-              class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-              {{loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Sign Up')}}
-            </button>
           </form>
 
-          <div class="mt-6 text-center">
+          <div class="mt-6">
             <button 
+              type="button" 
               (click)="toggleMode()"
-              class="text-blue-600 hover:text-blue-800 text-sm">
-              {{isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in'}}
+              class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+              {{ isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in' }}
             </button>
           </div>
         </div>
@@ -106,100 +99,53 @@ import { Router } from '@angular/router';
   `
 })
 export class AuthComponent {
-  private http = inject(HttpClient);
+  private apiService = inject(ApiService);
   private router = inject(Router);
-  
+
   isLogin = true;
   loading = false;
-  error = '';
-
+  
   formData = {
+    username: '',
     email: '',
     password: '',
-    username: '',
     first_name: '',
-    last_name: '',
-    phone: ''
+    last_name: ''
   };
 
   toggleMode() {
     this.isLogin = !this.isLogin;
-    this.error = '';
-    // Reset form data when switching modes
-    if (this.isLogin) {
-      this.formData = {
-        email: this.formData.email,
-        password: '',
-        username: '',
-        first_name: '',
-        last_name: '',
-        phone: ''
-      };
-    }
   }
 
   onSubmit() {
+    if (this.loading) return;
+
     this.loading = true;
-    this.error = '';
 
     if (this.isLogin) {
-      this.login();
+      this.apiService.login(this.formData.email, this.formData.password).subscribe({
+        next: (response) => {
+          this.router.navigate(['/']);
+          this.loading = false;
+        },
+        error: (error) => {
+          console.error('Login error:', error);
+          alert('Login failed');
+          this.loading = false;
+        }
+      });
     } else {
-      this.register();
+      this.apiService.register(this.formData).subscribe({
+        next: (response) => {
+          this.router.navigate(['/']);
+          this.loading = false;
+        },
+        error: (error) => {
+          console.error('Register error:', error);
+          alert('Registration failed');
+          this.loading = false;
+        }
+      });
     }
-  }
-
-  private login() {
-    // Users API Login - requiere solo email y password
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/login?tenant_id=tenant1`;
-    
-    const loginData = {
-      email: this.formData.email,
-      password: this.formData.password
-    };
-
-    this.http.post(url, loginData).subscribe({
-      next: (response: any) => {
-        // Guardar token y usuario según formato de respuesta de Users API
-        localStorage.setItem('token', response.token);
-        localStorage.setItem('user', JSON.stringify(response.user));
-        this.loading = false;
-        this.router.navigate(['/dashboard']);
-      },
-      error: (error) => {
-        console.error('Login error:', error);
-        this.error = error.error?.error || error.error?.message || 'Login failed';
-        this.loading = false;
-      }
-    });
-  }
-
-  private register() {
-    // Users API Register - requiere username, email, password, first_name, last_name
-    const url = `https://tf6775wga9.execute-api.us-east-1.amazonaws.com/dev/api/v1/register?tenant_id=tenant1`;
-    
-    const registerData = {
-      username: this.formData.username,
-      email: this.formData.email,
-      password: this.formData.password,
-      first_name: this.formData.first_name,
-      last_name: this.formData.last_name,
-      ...(this.formData.phone && { phone: this.formData.phone })
-    };
-
-    this.http.post(url, registerData).subscribe({
-      next: (response: any) => {
-        // Guardar token y usuario según formato de respuesta de Users API
-        localStorage.setItem('token', response.token);
-        localStorage.setItem('user', JSON.stringify(response.user));
-        this.loading = false;
-        this.router.navigate(['/dashboard']);
-      },
-      error: (error) => {
-        console.error('Register error:', error);
-        this.error = error.error?.error || error.error?.message || 'Registration failed';
-        this.loading = false;
-      }
-    });
   }
 }

@@ -1,383 +1,299 @@
 // src/app/shared/book-card.component.ts
-import { Component, Input, inject } from '@angular/core';
+import { Component, Input, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../services/api.service';
-import { API_CONFIG } from '../services/api.service';
-
-interface Book {
-  id: string;
-  title: string;
-  author: string;
-  isbn: string;
-  category: string;
-  price: number;
-  description: string;
-  image_url?: string;
-  stock: number;
-  created_at?: string;
-  updated_at?: string;
-}
 
 @Component({
   selector: 'app-book-card',
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-      <div class="aspect-w-3 aspect-h-4 bg-gray-200 relative">
-        <img
-          [src]="getFullImageUrl(book.image_url) || '/assets/book-placeholder.jpg'"
+    <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+      <div class="relative">
+        <img 
+          [src]="getBookImage()" 
           [alt]="book.title"
           class="w-full h-48 object-cover"
           (error)="onImageError($event)">
+        
+        <!-- Stock Badge -->
+        <div class="absolute top-2 right-2 bg-white rounded-full px-2 py-1 text-xs font-semibold text-gray-600 shadow-sm">
+          Stock: {{ getStockQuantity() }}
+        </div>
 
-        <button
-          (click)="toggleFavorite()"
-          [disabled]="favoriteLoading"
-          class="absolute top-2 right-2 p-2 bg-white bg-opacity-80 rounded-full hover:bg-opacity-100 transition-all">
-          <svg
-            class="w-5 h-5"
+        <!-- Action Icons - Top Left -->
+        <div class="absolute top-2 left-2 flex space-x-2">
+          <!-- Heart Icon for Favorites - Enhanced -->
+          <button 
+            (click)="toggleFavorite()"
+            [disabled]="favoritesLoading"
+            class="bg-white rounded-full p-2 shadow-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-110"
             [class.text-red-500]="isFavorite"
-            [class.fill-current]="isFavorite"
             [class.text-gray-400]="!isFavorite"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-          </svg>
-        </button>
-
-        <div class="absolute top-2 left-2">
-          <span
-            *ngIf="book.stock <= 5 && book.stock > 0"
-            class="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
-            Only {{book.stock}} left
-          </span>
-          <span
-            *ngIf="book.stock === 0"
-            class="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-            Out of Stock
-          </span>
-        </div>
-      </div>
-
-      <div class="p-6">
-        <div class="mb-2">
-          <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-            {{book.category}}
-          </span>
-        </div>
-
-        <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 min-h-[3.5rem] cursor-pointer hover:text-blue-600 transition-colors"
-            (click)="viewDetails()">
-          {{book.title}}
-        </h3>
-
-        <p class="text-gray-600 mb-2 text-sm">by {{book.author}}</p>
-
-        <p class="text-xs text-gray-500 mb-3">ISBN: {{book.isbn}}</p>
-
-        <div class="flex items-center justify-between mb-4">
-          <span class="text-2xl font-bold text-blue-600">\${{book.price}}</span>
-          <div class="text-right">
-            <p class="text-xs text-gray-500">Stock: {{book.stock}}</p>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <button
-            (click)="addToCart()"
-            [disabled]="book.stock === 0 || addingToCart"
-            class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-            {{addingToCart ? 'Adding...' : (book.stock === 0 ? 'Out of Stock' : 'Add to Cart')}}
+            [class.bg-red-50]="isFavorite"
+            [class.hover:bg-red-50]="!isFavorite && !favoritesLoading"
+            [class.hover:text-red-500]="!isFavorite && !favoritesLoading"
+            [title]="isFavorite ? 'Remove from favorites' : 'Add to favorites'">
+            
+            <!-- Filled heart when favorite -->
+            <svg *ngIf="isFavorite && !favoritesLoading" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"/>
+            </svg>
+            
+            <!-- Outline heart when not favorite -->
+            <svg *ngIf="!isFavorite && !favoritesLoading" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+            </svg>
+            
+            <!-- Loading spinner -->
+            <div *ngIf="favoritesLoading" class="w-5 h-5 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
           </button>
 
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              (click)="addToWishlist()"
-              [disabled]="wishlistLoading"
-              class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-              {{wishlistLoading ? '...' : 'Wishlist'}}
-            </button>
-
-            <button
-              (click)="viewDetails()"
-              class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-              Details
-            </button>
+          <!-- TikTok-style Bookmark Flag for Wishlist -->
+          <button 
+            (click)="addToWishlist()"
+            [disabled]="wishlistLoading"
+            class="bg-white rounded-full p-2 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 shadow-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-110">
+            <svg *ngIf="!wishlistLoading" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"/>
+            </svg>
+            <div *ngIf="wishlistLoading" class="w-5 h-5 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+          </button>
+        </div>
+      </div>
+      
+      <div class="p-4">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">{{ book.title }}</h3>
+        <p class="text-gray-600 mb-2">by {{ book.author }}</p>
+        <p class="text-sm text-gray-500 mb-3">{{ book.category }}</p>
+        
+        <div class="flex justify-between items-center mb-4">
+          <span class="text-xl font-bold text-blue-600">\${{ getPrice() }}</span>
+          <div class="flex items-center">
+            <svg class="w-4 h-4 text-yellow-400 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+            </svg>
+            <span class="text-sm text-gray-600">{{ getRating() }}</span>
           </div>
         </div>
+        
+        <button 
+          (click)="viewDetails()"
+          class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+          View Details
+        </button>
       </div>
     </div>
   `
 })
-export class BookCardComponent {
-  @Input() book!: Book;
-
-  private http = inject(HttpClient);
-  private router = inject(Router);
+export class BookCardComponent implements OnInit {
+  @Input() book: any;
+  
   private apiService = inject(ApiService);
-
+  private router = inject(Router);
+  
   isFavorite = false;
-  addingToCart = false;
-  favoriteLoading = false;
+  favoritesLoading = false;
   wishlistLoading = false;
+  private userFavorites: Set<string> = new Set();
 
   ngOnInit() {
-    // Check if this book is in user's favorites
-    this.checkIfFavorite();
+    console.log('Book data received:', this.book);
+    console.log('Book ID:', this.book?.book_id);
+    console.log('Alternative ID:', this.book?.id);
+    
+    // Check if book_id exists, if not try to use id field
+    if (!this.book?.book_id && this.book?.id) {
+      this.book.book_id = this.book.id;
+      console.log('Fixed book_id using id field:', this.book.book_id);
+    }
+    
+    console.log('Final book_id for favorites:', this.book?.book_id);
+    console.log('Is authenticated:', this.apiService.isAuthenticated());
+    
+    if (this.apiService.isAuthenticated()) {
+      this.loadUserFavorites();
+    }
   }
 
-  onImageError(event: any) {
-    event.target.src = '/assets/book-placeholder.jpg';
-  }
-
-  // Method to construct the full image URL
-  getFullImageUrl(imageUrl: string | undefined): string {
-    if (!imageUrl || imageUrl.startsWith('http')) {
-      return imageUrl || '';
-    }
-    // Assuming image_url from the book object is just the S3 key relative to the tenant
-    // We need to construct the full URL using the IMAGES_API_URL or the base S3 bucket URL directly if known.
-    // Based on the Images API documentation, the public URL is directly from S3.
-    // For now, we'll prefix with the known S3 bucket URL from the documentation for book covers.
-    const S3_BASE_URL = 'https://bookstore-images-dev-328458381283.s3.amazonaws.com/';
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const tenantId = user.tenant_id || 'tenant1';
-
-    // The image_url returned by the books API is expected to be a full URL, or a key.
-    // If it's a key like 'tenant/books/book_123/cover_timestamp.jpeg', then we reconstruct.
-    // If the image_url is just a filename, you'd need the book_id and tenant to construct.
-    // Based on the provided API documentation and data, the ideal scenario is that
-    // the 'cover_image_url' from the books API is already the complete S3 public URL.
-    // If it's not, and it's just a path segment, then this logic below tries to build it.
-    // However, if the backend sends empty, this won't help.
-
-    // Given the API response structure, it is more likely `cover_image_url` is intended to be the full URL.
-    // If it's relative, it would look something like 'tenant/books/book_id/filename.jpg'.
-    // The images API doc shows full URLs in its successful responses.
-    // So, if the imageUrl is not starting with 'http', it means it's malformed or not a direct URL.
-    // The simplest fix for the given problem (image_a7fc82.jpg showing '<empty>')
-    // is ensuring the backend provides a valid, full URL in `cover_image_url`.
-    // The code below is a *safeguard* if the backend provides a relative path,
-    // but the primary issue is missing/invalid URLs from the API itself.
-
-    // A more robust approach might be to check if imageUrl is just a filename
-    // and then use the IMAGES_API_URL and book_id to request a presigned URL or
-    // construct the full public URL from the S3 key if the API returns just the key.
-
-    // For now, let's assume `image_url` *might* contain just the key or a path relative to the bucket.
-    // The `DOCUMENTACION_IMAGES_API.md` shows the S3 key includes the tenant ID, e.g., 'tenant/books/book_123/cover_...'
-    // So, if the `image_url` is already a full S3 path, we use it directly.
-    // If it's a relative path like 'books/book_id/filename.jpg', we need to prepend the base.
-    // If it's just a filename, then the backend should return the full path or provide enough info.
-
-    // Given the `DOCUMENTACION_IMAGES_API.md` for 'UPLOAD BOOK COVER IMAGE' response,
-    // `image_url` is a *full S3 URL*.
-    // So, the `transformBook` in `dashboard.component.ts` should ideally just pass that full URL.
-    // The problem from image_a7fc82.jpg is that `cover_image_url` is `<empty>`.
-    // This `getFullImageUrl` function is only useful if the backend sends relative paths.
-    // But since the API returns full URLs, the main fix is to ensure the backend actually provides them.
-    // However, adding this check for non-http URLs is a good defensive measure.
-
-    // If imageUrl is already a full URL, return it directly.
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      return imageUrl;
-    }
-
-    // If it's just a path fragment, try to construct a full S3 URL based on known structure.
-    // Example: 'book_123/cover_20250713_142037.jpeg' (if backend only gives filename/partial path)
-    // This assumes the `imageUrl` property in `Book` interface is just the filename/partial key.
-    // If `book.image_url` is the S3 key like `tenant1/books/book_id/filename.jpg`, then
-    // `return S3_BASE_URL + imageUrl;` might be sufficient.
-    // If the `image_url` from the `Book` interface is intended to be *just* the filename,
-    // then the construction needs to include `tenantId` and `book.id`.
-    // Based on the provided image, the `cover_image_url` in the database is directly problematic.
-
-    // For now, let's just use the imageUrl directly and rely on the fallback if it's invalid.
-    // The core issue is that `apiBook.cover_image_url` is often empty in the database.
-    return imageUrl; // Keep it as is, and let onImageError handle if it's invalid/empty
-  }
-
-  addToCart() {
-    if (this.book.stock === 0) return;
-
-    this.addingToCart = true;
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-
-    if (!user.user_id) {
-      alert('Please login to add items to cart');
-      this.addingToCart = false;
-      return;
-    }
-
-    console.log('Adding to cart - Book details:', {
-      book_id: this.book.id,
-      user_id: user.user_id,
-      tenant_id: user.tenant_id,
-      book_title: this.book.title
-    });
-
-    this.apiService.addToCart(this.book.id, 1).subscribe({
-      next: (response: any) => {
-        console.log('Added to cart:', response);
-        this.showMessage('Added to cart successfully!', 'success');
-        this.addingToCart = false;
-      },
-      error: (error) => {
-        console.error('Error adding to cart:', error);
-        console.error('Error details:', {
-          status: error.status,
-          message: error.error?.error,
-          book_id: this.book.id,
-          user_id: user.user_id,
-          tenant_id: user.tenant_id
-        });
-        
-        // Try with different tenant if book not found
-        if (error.status === 400 && error.error?.error?.includes('Book not found')) {
-          this.tryAddWithDifferentTenant();
-        } else {
-          this.showMessage(error.error?.error || 'Failed to add to cart', 'error');
-          this.addingToCart = false;
+  private loadUserFavorites() {
+    console.log('Loading user favorites...');
+    this.apiService.getFavorites(1, 100).subscribe({
+      next: (response) => {
+        console.log('Favorites API response:', response);
+        this.userFavorites.clear();
+        if (response.items && response.items.length > 0) {
+          response.items.forEach((fav: any) => {
+            this.userFavorites.add(fav.book_id);
+          });
         }
-      }
-    });
-  }
-
-  private tryAddWithDifferentTenant() {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const token = localStorage.getItem('token');
-    const url = 'https://fikf4a274g.execute-api.us-east-1.amazonaws.com/dev/api/v1/cart';
-    
-    console.log('Trying to add to cart with tenant1...');
-    
-    this.http.post(url, {
-      user_id: user.user_id,
-      tenant_id: 'tenant1',
-      book_id: this.book.id,
-      quantity: 1
-    }, {
-      headers: { 
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    }).subscribe({
-      next: (response: any) => {
-        console.log('Added to cart with tenant1:', response);
-        this.showMessage('Added to cart successfully!', 'success');
-        this.addingToCart = false;
+        console.log('User favorites set:', Array.from(this.userFavorites));
+        
+        // Make sure we have a valid book_id before checking favorites
+        const bookId = this.book?.book_id || this.book?.id;
+        this.isFavorite = bookId ? this.userFavorites.has(bookId) : false;
+        console.log('Is this book favorite?', this.isFavorite, 'for book ID:', bookId);
       },
       error: (error) => {
-        console.error('Error adding with tenant1:', error);
-        this.showMessage(error.error?.error || 'Failed to add to cart', 'error');
-        this.addingToCart = false;
+        console.error('Error loading favorites:', error);
       }
     });
   }
 
   toggleFavorite() {
-    this.favoriteLoading = true;
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      alert('Please login to manage favorites');
-      this.favoriteLoading = false;
+    const bookId = this.book?.book_id || this.book?.id;
+    console.log('Toggle favorite clicked for book:', bookId);
+    
+    if (!this.apiService.isAuthenticated()) {
+      this.showMessage('Please login to manage favorites', 'error');
+      this.router.navigate(['/auth']);
       return;
     }
 
+    if (!bookId) {
+      console.error('Book ID is missing:', this.book);
+      this.showMessage('Book ID is missing - cannot add to favorites', 'error');
+      return;
+    }
+
+    this.favoritesLoading = true;
+    console.log('Current favorite state:', this.isFavorite);
+
     if (this.isFavorite) {
       // Remove from favorites
-      this.apiService.removeFromFavorites(this.book.id).subscribe({
-        next: (response: any) => {
+      console.log('Removing from favorites:', bookId);
+      this.apiService.removeFromFavorites(bookId).subscribe({
+        next: (response) => {
+          console.log('Remove favorite response:', response);
           this.isFavorite = false;
-          this.favoriteLoading = false;
+          this.userFavorites.delete(bookId);
           this.showMessage('Removed from favorites', 'success');
+          this.favoritesLoading = false;
         },
         error: (error) => {
           console.error('Error removing from favorites:', error);
-          // If API doesn't support removal, just toggle locally
-          this.isFavorite = false;
-          this.favoriteLoading = false;
-          this.showMessage('Removed from favorites', 'success');
+          this.showMessage('Error removing from favorites', 'error');
+          this.favoritesLoading = false;
         }
       });
     } else {
       // Add to favorites
-      this.apiService.addToFavorites(this.book.id).subscribe({
-        next: (response: any) => {
+      console.log('Adding to favorites:', bookId);
+      this.apiService.addToFavorites(bookId).subscribe({
+        next: (response) => {
+          console.log('Add favorite response:', response);
           this.isFavorite = true;
-          this.favoriteLoading = false;
+          this.userFavorites.add(bookId);
           this.showMessage('Added to favorites!', 'success');
+          this.favoritesLoading = false;
         },
         error: (error) => {
           console.error('Error adding to favorites:', error);
-          this.showMessage('Failed to add to favorites', 'error');
-          this.favoriteLoading = false;
+          this.showMessage('Error adding to favorites', 'error');
+          this.favoritesLoading = false;
         }
       });
     }
   }
 
   addToWishlist() {
-    this.wishlistLoading = true;
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      alert('Please login to manage wishlist');
-      this.wishlistLoading = false;
+    const bookId = this.book?.book_id || this.book?.id;
+    
+    if (!this.apiService.isAuthenticated()) {
+      this.showMessage('Please login to manage wishlist', 'error');
+      this.router.navigate(['/auth']);
       return;
     }
 
-    this.apiService.addToWishlist(this.book.id, this.book.title, this.book.author).subscribe({
-      next: (response: any) => {
+    if (!bookId) {
+      console.error('Book ID is missing for wishlist:', this.book);
+      this.showMessage('Book ID is missing - cannot add to wishlist', 'error');
+      return;
+    }
+
+    this.wishlistLoading = true;
+    this.apiService.addToWishlist(bookId, this.book.title, this.book.author).subscribe({
+      next: (response) => {
+        if (response.error) {
+          this.showMessage(`Error: ${response.error}`, 'warning');
+        } else {
+          this.showMessage('Added to wishlist!', 'success');
+        }
         this.wishlistLoading = false;
-        this.showMessage('Added to wishlist!', 'success');
       },
       error: (error) => {
         console.error('Error adding to wishlist:', error);
-        this.showMessage('Failed to add to wishlist', 'error');
+        this.showMessage('Error adding to wishlist', 'error');
         this.wishlistLoading = false;
       }
     });
   }
 
   viewDetails() {
-    // Navigate to book detail page
-    this.router.navigate(['/book', this.book.id]);
-  }
-
-  private checkIfFavorite() {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
-    this.apiService.getFavorites().subscribe({
-      next: (response) => {
-        const favorites = response.items || [];
-        this.isFavorite = favorites.some((fav: any) => fav.book_id === this.book.id);
-      },
-      error: (error) => {
-        console.error('Error checking favorites:', error);
-      }
-    });
-  }
-
-  private showMessage(message: string, type: 'success' | 'error') {
-    // Simple alert for now - in a real app, you'd use a toast notification service
-    if (type === 'success') {
-      // Create a temporary success notification
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
-      notification.textContent = message;
-      document.body.appendChild(notification);
-
-      setTimeout(() => {
-        document.body.removeChild(notification);
-      }, 3000);
+    const bookId = this.book?.book_id || this.book?.id;
+    if (bookId) {
+      this.router.navigate(['/book', bookId]);
     } else {
-      alert(message);
+      console.error('Cannot navigate - missing book ID:', this.book);
     }
+  }
+
+  onImageError(event: Event) {
+    const target = event.target as HTMLImageElement;
+    if (target) {
+      target.src = '/assets/book-placeholder.jpg';
+    }
+  }
+
+  private showMessage(message: string, type: 'success' | 'error' | 'warning') {
+    const notification = document.createElement('div');
+    let bgColor = 'bg-green-500';
+    
+    switch (type) {
+      case 'error':
+        bgColor = 'bg-red-500';
+        break;
+      case 'warning':
+        bgColor = 'bg-yellow-500';
+        break;
+      default:
+        bgColor = 'bg-green-500';
+    }
+    
+    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg z-50`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  }
+
+  // Helper methods to safely get book properties
+  getBookImage(): string {
+    return this.book?.cover_image_url || 
+           this.book?.image_url || 
+           '/assets/book-placeholder.jpg';
+  }
+
+  getStockQuantity(): number {
+    return parseInt(this.book?.stock_quantity) || 
+           parseInt(this.book?.stock) || 
+           0;
+  }
+
+  getPrice(): string {
+    const price = parseFloat(this.book?.price) || 0;
+    return price.toFixed(2);
+  }
+
+  // Fix the rating display to handle both API response formats
+  getRating(): string {
+    // Handle both rating and rating field names
+    const rating = parseFloat(this.book?.rating) || 0;
+    return rating > 0 ? rating.toFixed(1) : '4.5'; // Default to 4.5 if no rating
   }
 }

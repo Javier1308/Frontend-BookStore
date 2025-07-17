@@ -1,7 +1,8 @@
-// src/app/books/books.component.ts - FIXED VERSION
+// src/app/books/books.component.ts - REWRITTEN VERSION
 import { Component, OnInit, inject, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../services/api.service';
 import { BookCardComponent } from '../shared/book-card.component';
 import { debounceTime, distinctUntilChanged, Subject } from 'rxjs';
@@ -33,193 +34,90 @@ interface Book {
   imports: [CommonModule, FormsModule, BookCardComponent],
   template: `
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <!-- Search and Filter Section -->
       <div class="mb-8">
-        <div class="flex justify-between items-center mb-4">
-          <h1 class="text-3xl font-bold text-gray-800">Book Collection</h1>
-          <button 
-            (click)="openCreateModal()"
-            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-            </svg>
-            Crear Producto
-          </button>
-        </div>
-        
-        <!-- Search and Filters -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-          <!-- Search Box with Autocomplete -->
-          <div class="mb-4 relative">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Búsqueda de Productos</label>
+        <div class="flex flex-col md:flex-row gap-4 mb-6">
+          <div class="flex-1">
             <input 
               type="text" 
               [(ngModel)]="searchQuery"
-              (input)="onSearchInput()"
-              (keyup.enter)="performSearch()"
-              placeholder="Buscar por título, autor o descripción..."
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-            
-            <!-- Clear Search Button -->
-            <button 
-              *ngIf="searchQuery.length > 0"
-              (click)="clearSearch()"
-              class="absolute right-3 top-12 text-gray-400 hover:text-gray-600">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-            </button>
-            
-            <!-- Autocomplete Dropdown -->
-            <div 
-              *ngIf="showSuggestions && suggestions.length > 0" 
-              class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-              <div 
-                *ngFor="let suggestion of suggestions"
-                (click)="selectSuggestion(suggestion)"
-                class="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0">
-                <div class="font-semibold">{{ suggestion.title }}</div>
-                <div class="text-sm text-gray-600">{{ suggestion.author }} - {{ suggestion.category }}</div>
-              </div>
-            </div>
+              (keyup.enter)="searchBooks()"
+              placeholder="Search books by title, author, or category..."
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
-
-          <!-- Search Options -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div class="flex items-center gap-2">
-              <input 
-                type="checkbox" 
-                id="fuzzySearch"
-                [(ngModel)]="fuzzySearchEnabled"
-                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-              <label for="fuzzySearch" class="text-sm text-gray-700">
-                Búsqueda Fuzzy (encuentra palabras similares)
-              </label>
-            </div>
-            
-            <div class="flex items-center gap-2">
-              <input 
-                type="checkbox" 
-                id="prefixSearch"
-                [(ngModel)]="prefixSearchEnabled"
-                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-              <label for="prefixSearch" class="text-sm text-gray-700">
-                Búsqueda por Prefijo
-              </label>
-            </div>
-          </div>
-
-          <!-- Filters -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
-              <select 
-                [(ngModel)]="selectedCategory"
-                (change)="onCategoryChange()"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">All Categories</option>
-                <option *ngFor="let category of categories" [value]="category">{{category}}</option>
-              </select>
-            </div>
-            
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Sort by</label>
-              <select 
-                [(ngModel)]="sortBy"
-                (change)="onSortChange()"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="created_at">Newest</option>
-                <option value="title">Title</option>
-                <option value="price">Price</option>
-                <option value="rating">Rating</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Search Status -->
-          <div *ngIf="isSearching" class="mt-4 text-blue-600">
-            Buscando: "{{ searchQuery }}"
-          </div>
+          <button 
+            (click)="searchBooks()"
+            class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+            Search
+          </button>
+        </div>
+        
+        <div class="flex flex-wrap gap-4">
+          <select 
+            [(ngModel)]="selectedCategory"
+            (change)="filterByCategory()"
+            class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">All Categories</option>
+            <option *ngFor="let category of categories" [value]="category">{{ category }}</option>
+          </select>
+          
+          <select 
+            [(ngModel)]="sortBy"
+            (change)="sortBooks()"
+            class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Sort by</option>
+            <option value="title">Title</option>
+            <option value="price">Price</option>
+            <option value="rating">Rating</option>
+            <option value="created_at">Date Added</option>
+          </select>
         </div>
       </div>
 
-      <!-- Books Grid -->
+      <!-- Loading State -->
       <div *ngIf="loading" class="flex justify-center items-center h-64">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
 
+      <!-- Books Grid -->
+      <div *ngIf="!loading && books.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <app-book-card 
+          *ngFor="let book of books; trackBy: trackByBookId" 
+          [book]="book">
+        </app-book-card>
+      </div>
+
+      <!-- Empty State -->
       <div *ngIf="!loading && books.length === 0" class="text-center py-12">
-        <svg class="mx-auto w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253"></path>
-        </svg>
-        <p class="text-gray-500 text-lg">
-          {{ isSearching ? 'No se encontraron libros con "' + searchQuery + '"' : 'No books found' }}
-        </p>
+        <p class="text-gray-500 text-lg">No books found</p>
         <button 
-          (click)="isSearching ? clearSearch() : loadBooks()"
+          (click)="loadBooks()"
           class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-          {{ isSearching ? 'Clear Search' : 'Reload Books' }}
+          Load All Books
         </button>
       </div>
 
-      <div *ngIf="!loading && books.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <div *ngFor="let book of books" class="relative">
-          <app-book-card [book]="transformBook(book)"></app-book-card>
-          
-          <!-- Admin Actions -->
-          <div class="absolute top-2 right-2 flex gap-1">
-            <button 
-              (click)="editBook(book)"
-              class="bg-yellow-500 text-white p-2 rounded-lg hover:bg-yellow-600 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-              </svg>
-            </button>
-            <button 
-              (click)="deleteBook(book)"
-              class="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- Pagination -->
-      <div *ngIf="!loading && pagination && pagination.total_pages > 1" class="mt-8 flex justify-center">
-        <nav class="flex space-x-2">
+      <div *ngIf="!loading && pagination.total_pages > 1" class="mt-8 flex justify-center">
+        <div class="flex space-x-2">
           <button 
             (click)="goToPage(pagination.current_page - 1)"
             [disabled]="!pagination.has_previous"
-            class="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
+            class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
             Previous
           </button>
           
-          <button 
-            *ngFor="let page of getPageNumbers()"
-            (click)="goToPage(page)"
-            [class.bg-blue-600]="page === pagination.current_page"
-            [class.text-white]="page === pagination.current_page"
-            [class.bg-gray-200]="page !== pagination.current_page"
-            [class.text-gray-700]="page !== pagination.current_page"
-            class="px-3 py-2 rounded-lg hover:bg-blue-500 hover:text-white">
-            {{page}}
-          </button>
+          <span class="px-4 py-2 text-gray-700">
+            Page {{ pagination.current_page }} of {{ pagination.total_pages }}
+          </span>
           
           <button 
             (click)="goToPage(pagination.current_page + 1)"
             [disabled]="!pagination.has_next"
-            class="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
+            class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
             Next
           </button>
-        </nav>
-      </div>
-
-      <!-- Results Info -->
-      <div *ngIf="!loading && pagination" class="mt-4 text-center text-sm text-gray-600">
-        Showing {{books.length}} of {{pagination.total_items}} books
-        <span *ngIf="isSearching"> for "{{searchQuery}}"</span>
-        <span *ngIf="selectedCategory"> in {{selectedCategory}}</span>
+        </div>
       </div>
     </div>
 
@@ -231,7 +129,9 @@ interface Book {
 })
 export class BooksComponent implements OnInit {
   private apiService = inject(ApiService);
-  
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+
   // Original books array to store all books when not searching
   private allBooks: Book[] = [];
   books: Book[] = [];
@@ -272,7 +172,15 @@ export class BooksComponent implements OnInit {
 
   ngOnInit() {
     this.loadCategories();
-    this.loadBooks();
+    this.route.queryParams.subscribe(params => {
+      if (params['category']) {
+        this.selectedCategory = params['category'];
+      }
+      if (params['search']) {
+        this.searchQuery = params['search'];
+      }
+      this.loadBooks();
+    });
     
     // Setup search debounce for autocomplete
     this.searchSubject.pipe(
@@ -300,18 +208,41 @@ export class BooksComponent implements OnInit {
     });
   }
 
-  loadBooks() {
+  // Transform Books API format to BookCard component format
+  private transformBooks(apiBooks: any[]): any[] {
+    return apiBooks.map(book => ({
+      book_id: book.book_id,
+      title: book.title || 'Unknown Title',
+      author: book.author || 'Unknown Author',
+      isbn: book.isbn || '',
+      category: book.category || 'General',
+      price: parseFloat(book.price) || 0,
+      description: book.description || '',
+      cover_image_url: book.cover_image_url || book.image_url || '',
+      stock_quantity: parseInt(book.stock_quantity) || parseInt(book.stock) || 0,
+      publication_year: book.publication_year || 0,
+      language: book.language || 'en',
+      pages: book.pages || 0,
+      rating: parseFloat(book.rating) || 0,
+      tenant_id: book.tenant_id || '',
+      created_at: book.created_at || '',
+      updated_at: book.updated_at || '',
+      is_active: book.is_active !== false
+    }));
+  }
+
+  loadBooks(page: number = 1) {
     this.loading = true;
     this.isSearching = false;
     
     this.apiService.getBooks(
-      this.pagination?.current_page || 1,
+      page,
       12,
       this.selectedCategory,
       this.sortBy
     ).subscribe({
       next: (response) => {
-        this.allBooks = response.data || [];
+        this.allBooks = this.transformBooks(response.data || []);
         this.books = [...this.allBooks];
         this.pagination = response.pagination;
         this.loading = false;
@@ -338,6 +269,11 @@ export class BooksComponent implements OnInit {
     }
   }
 
+  // Called by (keyup.enter) and Search button
+  searchBooks() {
+    this.performSearch();
+  }
+
   performSearch() {
     if (this.searchQuery.trim().length < 2) {
       return;
@@ -350,41 +286,25 @@ export class BooksComponent implements OnInit {
     // Clear pagination when searching
     this.pagination = null;
     
-    if (this.prefixSearchEnabled) {
-      this.apiService.searchByPrefix(this.searchQuery).subscribe({
-        next: (response) => {
-          this.books = response.data || [];
-          this.pagination = response.pagination;
-          this.loading = false;
-          console.log('Prefix search results:', this.books.length);
-        },
-        error: (error) => {
-          console.error('Error searching books:', error);
-          this.books = [];
-          this.loading = false;
-        }
-      });
-    } else {
-      this.apiService.searchBooks(this.searchQuery, this.fuzzySearchEnabled).subscribe({
-        next: (response) => {
-          this.books = response.data || [];
-          this.pagination = response.pagination;
-          this.loading = false;
-          console.log('Search results:', this.books.length);
-        },
-        error: (error) => {
-          console.error('Error searching books:', error);
-          this.books = [];
-          this.loading = false;
-        }
-      });
-    }
+    this.apiService.searchBooks(this.searchQuery, this.fuzzySearchEnabled, 1, 12).subscribe({
+      next: (response) => {
+        this.books = this.transformBooks(response.data || []);
+        this.pagination = response.pagination;
+        this.loading = false;
+        console.log('Search results:', this.books.length);
+      },
+      error: (error) => {
+        console.error('Error searching books:', error);
+        this.books = [];
+        this.loading = false;
+      }
+    });
   }
 
   loadAutocompleteSuggestions(query: string) {
     this.apiService.getAutocompleteSuggestions(query).subscribe({
       next: (response) => {
-        this.suggestions = response.data || [];
+        this.suggestions = this.transformBooks(response.data || []);
         this.showSuggestions = this.suggestions.length > 0;
       },
       error: (error) => {
@@ -413,6 +333,12 @@ export class BooksComponent implements OnInit {
 
   onCategoryChange() {
     this.clearSearch();
+    this.loadBooks();
+  }
+
+  filterByCategory() {
+    this.clearSearch();
+    this.selectedCategory = this.selectedCategory || '';
     this.loadBooks();
   }
 
@@ -560,23 +486,6 @@ export class BooksComponent implements OnInit {
     this.savingBook = false;
   }
 
-  // Transform Books API format to BookCard component format
-  transformBook(apiBook: Book): any {
-    return {
-      id: apiBook.book_id,
-      title: apiBook.title,
-      author: apiBook.author,
-      isbn: apiBook.isbn,
-      category: apiBook.category,
-      price: apiBook.price,
-      description: apiBook.description,
-      image_url: apiBook.cover_image_url,
-      stock: apiBook.stock_quantity,
-      created_at: apiBook.created_at,
-      updated_at: apiBook.updated_at
-    };
-  }
-
   // Click outside handler for autocomplete
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: Event) {
@@ -584,5 +493,13 @@ export class BooksComponent implements OnInit {
     if (!target.closest('.relative')) {
       this.showSuggestions = false;
     }
+  }
+
+  trackByBookId(index: number, book: Book): string {
+    return book.book_id;
+  }
+
+  sortBooks() {
+    this.onSortChange();
   }
 }
