@@ -69,7 +69,7 @@ interface Book {
                     <p class="text-xs text-gray-400">ISBN: {{ suggestion.isbn }}</p>
                   </div>
                   <div class="text-right">
-                    <p class="text-sm font-medium text-blue-600">\${{ suggestion.price?.toFixed(2) }}</p>
+                    <p class="text-sm font-medium text-blue-600">\${{ suggestion.price.toFixed(2) }}</p>
                     <p class="text-xs text-gray-500">{{ suggestion.category }}</p>
                   </div>
                 </div>
@@ -80,13 +80,20 @@ interface Book {
           <div class="flex space-x-2">
             <button 
               (click)="searchBooks()"
-              class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-              Search
+              [disabled]="loading"
+              class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+              {{ loading ? 'Searching...' : 'Search' }}
             </button>
             <button 
               (click)="clearSearch()"
               class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors">
               Clear
+            </button>
+            <!-- Debug test button -->
+            <button 
+              (click)="testSearch()"
+              class="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
+              Test
             </button>
           </div>
         </div>
@@ -136,6 +143,17 @@ interface Book {
         </div>
       </div>
 
+      <!-- Enhanced Debug information with ElasticSearch -->
+      <div *ngIf="isSearching" class="mb-4 p-4 bg-gray-100 rounded-lg">
+        <h3 class="font-semibold text-gray-800 mb-2">Debug Information:</h3>
+        <p class="text-sm text-gray-600">Search Query: "{{ searchQuery }}"</p>
+        <p class="text-sm text-gray-600">Search Type: {{ searchType }}</p>
+        <p class="text-sm text-gray-600">API Endpoint: {{ getApiEndpoint() }}</p>
+        <p class="text-sm text-gray-600">Results Found: {{ books.length }}</p>
+        <p class="text-sm text-blue-600">ElasticSearch IP: 44.222.79.214:9201</p>
+        <p class="text-sm text-orange-600">Note: Backend needs IP update if search fails</p>
+      </div>
+
       <!-- Loading State -->
       <div *ngIf="loading" class="flex justify-center items-center h-64">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -170,7 +188,7 @@ interface Book {
       </div>
 
       <!-- Pagination -->
-      <div *ngIf="!loading && pagination.total_pages > 1" class="mt-8 flex justify-center">
+      <div *ngIf="!loading && pagination && pagination.total_pages > 1" class="mt-8 flex justify-center">
         <div class="flex space-x-2">
           <button 
             (click)="goToPage(pagination.current_page - 1)"
@@ -244,8 +262,12 @@ export class BooksComponent implements OnInit {
   };
 
   ngOnInit() {
+    console.log('BooksComponent initialized'); // Debug log
+    
     this.loadCategories();
     this.route.queryParams.subscribe(params => {
+      console.log('Query params:', params); // Debug log
+      
       if (params['category']) {
         this.selectedCategory = params['category'];
       }
@@ -276,6 +298,7 @@ export class BooksComponent implements OnInit {
   loadCategories() {
     this.apiService.getCategories().subscribe({
       next: (response) => {
+        console.log('Categories loaded:', response); // Debug log
         this.categories = response.categories || [];
       },
       error: (error) => {
@@ -312,23 +335,61 @@ export class BooksComponent implements OnInit {
     this.loading = true;
     this.isSearching = false;
     
+    // Use a higher limit to show more books by default
+    const itemsPerPage = 50; // Increased from 20 to 50 to show more books
+    
+    console.log('Loading books with params:', {
+      page,
+      limit: itemsPerPage,
+      category: this.selectedCategory,
+      sort: this.sortBy,
+      tenant_id: 'tenant1' // Fixed tenant_id
+    });
+    
     this.apiService.getBooks(
       page,
-      12,
+      itemsPerPage,
       this.selectedCategory,
       this.sortBy
     ).subscribe({
       next: (response) => {
-        this.allBooks = this.transformBooks(response.data || []);
+        console.log('Books API response:', response);
+        
+        // Handle both array and object responses
+        const booksData = Array.isArray(response) ? response : (response.data || []);
+        this.allBooks = this.transformBooks(booksData);
         this.books = [...this.allBooks];
-        this.pagination = response.pagination;
+        
+        // Handle pagination - might be null if not paginated
+        this.pagination = response.pagination || {
+          current_page: 1,
+          total_pages: 1,
+          total_items: this.books.length,
+          items_per_page: itemsPerPage,
+          has_next: false,
+          has_previous: false
+        };
+        
         this.loading = false;
+        
+        console.log('Loaded books:', this.books.length);
+        console.log('Pagination:', this.pagination);
+        
+        if (this.books.length === 0) {
+          console.warn('No books found. Check tenant_id and API connection.');
+        }
       },
       error: (error) => {
         console.error('Error loading books:', error);
+        console.error('Error details:', {
+          status: error.status,
+          message: error.message,
+          url: error.url
+        });
         this.books = [];
         this.allBooks = [];
         this.loading = false;
+        this.showSearchMessage('Error loading books. Please try again.', 'error');
       }
     });
   }
@@ -350,13 +411,14 @@ export class BooksComponent implements OnInit {
     }
   }
 
-  // Check if the query looks like an ISBN
+  // Check if the query looks like an ISBN - Updated patterns based on API docs
   isISBNLike(query: string): boolean {
     // Remove hyphens and spaces
     const cleanQuery = query.replace(/[-\s]/g, '');
-    // Check if it looks like an ISBN (10 or 13 digits, possibly with 'X')
+    // Check if it's exactly 10 or 13 digits (with possible X at the end for ISBN-10)
     return /^(?:\d{9}[\dX]|\d{13})$/.test(cleanQuery) || 
-           /^(?:\d{3}-?\d{1,5}-?\d{1,7}-?\d{1,7}-?[\dX]|\d{1,5}-?\d{1,7}-?\d{1,7}-?[\dX])$/.test(query);
+           // Or if it has proper ISBN format with hyphens
+           /^(?:97[89]-?\d{1,5}-?\d{1,7}-?\d{1,6}-?\d|97[89]\d{10})$/.test(query.replace(/[-\s]/g, ''));
   }
 
   // Check if current search is ISBN type
@@ -398,16 +460,128 @@ export class BooksComponent implements OnInit {
     }
   }
 
+  private searchByText() {
+    console.log('Searching by text:', this.searchQuery);
+    console.log('ElasticSearch IP should be: 44.222.79.214:9201');
+    
+    // Use consistent pagination for search
+    const currentPage = 1; // Always start with page 1 for new searches
+    const itemsPerPage = 50; // Match the loadBooks limit
+    
+    // Log the exact parameters being sent
+    console.log('Search parameters:', {
+      query: this.searchQuery,
+      category: this.selectedCategory,
+      page: currentPage,
+      limit: itemsPerPage,
+      tenant_id: 'tenant1',
+      elasticsearch_ip: '44.222.79.214:9201'
+    });
+    
+    this.apiService.searchBooks(
+      this.searchQuery, 
+      this.selectedCategory,
+      currentPage, 
+      itemsPerPage
+    ).subscribe({
+      next: (response) => {
+        console.log('Raw Search API response:', response);
+        console.log('Response type:', typeof response);
+        console.log('Response keys:', Object.keys(response || {}));
+        
+        // Handle the response structure from Books API with ElasticSearch
+        let books: any[] = [];
+        let pagination = null;
+        
+        if (response && response.data && Array.isArray(response.data)) {
+          books = response.data;
+          pagination = response.pagination;
+          console.log('ElasticSearch returned data array with', books.length, 'items');
+        } else if (Array.isArray(response)) {
+          books = response;
+          console.log('ElasticSearch returned direct array with', books.length, 'items');
+        } else if (response && typeof response === 'object') {
+          // Check if response has book properties directly
+          if (response.book_id || response.title) {
+            books = [response];
+            console.log('ElasticSearch returned single book object');
+          } else {
+            console.log('ElasticSearch response structure not recognized:', response);
+            books = [];
+          }
+        } else {
+          console.log('No valid ElasticSearch response structure found');
+          books = [];
+        }
+        
+        this.books = this.transformBooks(books);
+        this.pagination = pagination || {
+          current_page: 1,
+          total_pages: 1,
+          total_items: this.books.length,
+          items_per_page: itemsPerPage,
+          has_next: false,
+          has_previous: false
+        };
+        
+        this.loading = false;
+        
+        console.log('Final transformed books from ElasticSearch:', this.books);
+        console.log('Books count:', this.books.length);
+        
+        if (this.books.length === 0) {
+          console.log('No books found in ElasticSearch, showing warning message');
+          this.showSearchMessage(`No books found for: "${this.searchQuery}". ElasticSearch may need backend update to IP 44.222.79.214:9201`, 'warning');
+        } else {
+          console.log('Books found in ElasticSearch, showing success message');
+          this.showSearchMessage(`Found ${this.books.length} books for: "${this.searchQuery}" (via ElasticSearch)`, 'success');
+        }
+      },
+      error: (error) => {
+        console.error('ElasticSearch API Error:', error);
+        console.error('Error status:', error.status);
+        console.error('Error message:', error.message);
+        console.error('Error response:', error.error);
+        
+        this.books = [];
+        this.loading = false;
+        
+        // Enhanced error handling for ElasticSearch issues
+        if (error.status === 0) {
+          this.showSearchMessage('Network error - Check connection to ElasticSearch (44.222.79.214:9201)', 'error');
+        } else if (error.status === 401) {
+          this.showSearchMessage('Please log in to search books', 'error');
+        } else if (error.status === 400) {
+          this.showSearchMessage('Invalid search parameters', 'error');
+        } else if (error.status === 502 || error.status === 503) {
+          this.showSearchMessage('ElasticSearch service unavailable - Backend needs IP update to 44.222.79.214:9201', 'error');
+        } else if (error.status === 500) {
+          this.showSearchMessage('ElasticSearch connection error - Backend may need IP update', 'error');
+        } else {
+          this.showSearchMessage(`Search failed: ${error.message || 'ElasticSearch connection issue'}`, 'error');
+        }
+      }
+    });
+  }
+
   private searchByISBN() {
     // Clean the ISBN (remove hyphens and spaces)
     const cleanISBN = this.searchQuery.replace(/[-\s]/g, '');
     
     console.log('Searching by ISBN:', cleanISBN);
     
-    this.apiService.searchByISBN(cleanISBN).subscribe({
+    // Use the proper ISBN search endpoint from Books API
+    this.apiService.searchBookByISBN(cleanISBN).subscribe({
       next: (book) => {
-        // Single book result for ISBN search
-        this.books = book ? [this.transformBook(book)] : [];
+        console.log('ISBN search API response:', book);
+        
+        // Single book result for ISBN search - handle both single object and array response
+        if (book) {
+          this.books = Array.isArray(book) ? this.transformBooks(book) : this.transformBooks([book]);
+        } else {
+          this.books = [];
+        }
+        
         this.pagination = {
           current_page: 1,
           total_pages: 1,
@@ -417,61 +591,62 @@ export class BooksComponent implements OnInit {
           has_previous: false
         };
         this.loading = false;
+        
         console.log('ISBN search results:', this.books.length);
+        
+        if (this.books.length === 0) {
+          this.showSearchMessage(`No book found with ISBN: ${cleanISBN}`, 'warning');
+        } else {
+          this.showSearchMessage(`Found book with ISBN: ${cleanISBN}`, 'success');
+        }
       },
       error: (error) => {
         console.error('Error searching by ISBN:', error);
+        console.error('Full error details:', {
+          status: error.status,
+          statusText: error.statusText,
+          message: error.message,
+          url: error.url,
+          error: error.error
+        });
+        
         this.books = [];
         this.loading = false;
+        
+        // Handle specific ISBN search errors
+        if (error.status === 404) {
+          this.showSearchMessage(`No book found with ISBN: ${cleanISBN}`, 'warning');
+        } else if (error.status === 0) {
+          this.showSearchMessage('Network error - please check your connection', 'error');
+        } else if (error.status === 401) {
+          this.showSearchMessage('Authentication required - please log in', 'error');
+        } else {
+          this.showSearchMessage(`ISBN search error: ${error.message || 'Unknown error'}`, 'error');
+        }
       }
     });
-  }
-
-  private searchByText() {
-    console.log('Searching by text:', this.searchQuery);
-    
-    this.apiService.searchBooks(this.searchQuery, this.fuzzySearchEnabled, 1, 12).subscribe({
-      next: (response) => {
-        this.books = this.transformBooks(response.data || []);
-        this.pagination = response.pagination;
-        this.loading = false;
-        console.log('Text search results:', this.books.length);
-      },
-      error: (error) => {
-        console.error('Error searching books:', error);
-        this.books = [];
-        this.loading = false;
-      }
-    });
-  }
-
-  private transformBook(apiBook: any): any {
-    return {
-      book_id: apiBook.book_id,
-      title: apiBook.title || 'Unknown Title',
-      author: apiBook.author || 'Unknown Author',
-      isbn: apiBook.isbn || '',
-      category: apiBook.category || 'General',
-      price: parseFloat(apiBook.price) || 0,
-      description: apiBook.description || '',
-      cover_image_url: apiBook.cover_image_url || apiBook.image_url || '',
-      stock_quantity: parseInt(apiBook.stock_quantity) || parseInt(apiBook.stock) || 0,
-      publication_year: apiBook.publication_year || 0,
-      language: apiBook.language || 'en',
-      pages: apiBook.pages || 0,
-      rating: parseFloat(apiBook.rating) || 0,
-      tenant_id: apiBook.tenant_id || '',
-      created_at: apiBook.created_at || '',
-      updated_at: apiBook.updated_at || '',
-      is_active: apiBook.is_active !== false
-    };
   }
 
   loadAutocompleteSuggestions(query: string) {
-    this.apiService.getAutocompleteSuggestions(query).subscribe({
+    console.log('Loading autocomplete suggestions for:', query);
+    
+    // Use the text search endpoint for autocomplete with a smaller limit
+    this.apiService.searchBooks(query, '', 1, 5).subscribe({
       next: (response) => {
-        this.suggestions = this.transformBooks(response.data || []);
+        console.log('Autocomplete response:', response);
+        
+        // Handle the response structure properly
+        let suggestions = [];
+        if (response && response.data) {
+          suggestions = response.data;
+        } else if (Array.isArray(response)) {
+          suggestions = response;
+        }
+        
+        this.suggestions = this.transformBooks(suggestions);
         this.showSuggestions = this.suggestions.length > 0;
+        
+        console.log('Autocomplete suggestions loaded:', this.suggestions.length);
       },
       error: (error) => {
         console.error('Error loading suggestions:', error);
@@ -482,8 +657,14 @@ export class BooksComponent implements OnInit {
   }
 
   selectSuggestion(book: any) {
-    this.searchQuery = book.isbn || book.title;
-    this.searchType = book.isbn ? 'isbn' : 'text';
+    // If the book has an ISBN, prefer ISBN search for accuracy
+    if (book.isbn && book.isbn.trim()) {
+      this.searchQuery = book.isbn;
+      this.searchType = 'isbn';
+    } else {
+      this.searchQuery = book.title;
+      this.searchType = 'text';
+    }
     this.showSuggestions = false;
     this.suggestions = [];
     this.performSearch();
@@ -523,9 +704,10 @@ export class BooksComponent implements OnInit {
       this.pagination = { ...this.pagination, current_page: page };
       
       if (this.isSearching) {
+        // Re-perform search with new page
         this.performSearch();
       } else {
-        this.loadBooks();
+        this.loadBooks(page);
       }
     }
   }
@@ -669,5 +851,75 @@ export class BooksComponent implements OnInit {
 
   sortBooks() {
     this.onSortChange();
+  }
+
+  private showSearchMessage(message: string, type: 'success' | 'error' | 'warning') {
+    const notification = document.createElement('div');
+    let bgColor = 'bg-green-500';
+    
+    switch (type) {
+      case 'error':
+        bgColor = 'bg-red-500';
+        break;
+      case 'warning':
+        bgColor = 'bg-yellow-500';
+        break;
+      default:
+        bgColor = 'bg-green-500';
+    }
+    
+    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg z-50 max-w-sm`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  }
+
+  // Test search functionality with ElasticSearch
+  testSearch() {
+    console.log('Testing ElasticSearch with direct API call...');
+    console.log('Current ElasticSearch IP should be: 44.222.79.214:9201');
+    
+    this.apiService.searchBooks('Cien', '', 1, 20).subscribe({
+      next: (response) => {
+        console.log('ElasticSearch test response:', response);
+        this.showSearchMessage('ElasticSearch test completed - check console for results', 'success');
+      },
+      error: (error) => {
+        console.error('ElasticSearch test error:', error);
+        this.showSearchMessage('ElasticSearch test failed - may need backend IP update to 44.222.79.214:9201', 'error');
+      }
+    });
+  }
+
+  // Enhanced debug endpoint display with ElasticSearch info
+  getApiEndpoint(): string {
+    const baseUrl = 'https://4f2enpqk9i.execute-api.us-east-1.amazonaws.com/dev';
+    const tenantId = 'tenant1';
+    const elasticSearchIP = '44.222.79.214:9201';
+    
+    if (this.searchType === 'isbn' || this.isISBNLike(this.searchQuery)) {
+      const cleanISBN = this.searchQuery.replace(/[-\s]/g, '');
+      return `${baseUrl}/api/v1/books/by-isbn/${cleanISBN}?tenant_id=${tenantId} (ElasticSearch: ${elasticSearchIP})`;
+    } else if (this.isSearching) {
+      const category = this.selectedCategory ? `&category=${encodeURIComponent(this.selectedCategory)}` : '';
+      const page = this.pagination?.current_page || 1;
+      return `${baseUrl}/api/v1/books/search?tenant_id=${tenantId}&q=${encodeURIComponent(this.searchQuery)}&page=${page}&limit=50${category} (ElasticSearch: ${elasticSearchIP})`;
+    } else {
+      const page = this.pagination?.current_page || 1;
+      const category = this.selectedCategory ? `&category=${encodeURIComponent(this.selectedCategory)}` : '';
+      const sort = this.sortBy ? `&sort=${this.sortBy}` : '';
+      return `${baseUrl}/api/v1/books?tenant_id=${tenantId}&page=${page}&limit=50${category}${sort}`;
+    }
+  }
+
+  // Add helper method to get tenant_id consistently
+  private getTenantId(): string {
+    // Use tenant1 to match the Books API documentation
+    return 'tenant1';
   }
 }

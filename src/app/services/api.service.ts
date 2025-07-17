@@ -179,128 +179,223 @@ export class ApiService {
   // BOOKS API METHODS
   // ========================
 
-  getBooks(page: number = 1, limit: number = 20, category?: string, sort?: string): Observable<BookSearchResponse> {
+  // Helper method to get tenant ID from token or use default
+  private getTenantId(): string {
+    // Based on the Books API documentation, use tenant1 for Books API
+    return 'tenant1';
+  }
+
+  // Search books by text - Enhanced for ElasticSearch integration
+  searchBooks(query: string, category?: string, page: number = 1, limit: number = 20): Observable<any> {
+    // Build parameters exactly as documented
     let params = new HttpParams()
-      .set('tenant_id', this.TENANT_ID)
-      .set('page', page.toString())
-      .set('limit', limit.toString());
-
-    if (category) params = params.set('category', category);
-    if (sort) params = params.set('sort', sort);
-
-    return this.http.get<BookSearchResponse>(
-      `${this.BOOKS_API}/api/v1/books`,
-      { params, headers: this.getAuthHeaders() }
-    ).pipe(
-      catchError(error => {
-        console.error('Error fetching books:', error);
-        return of({ data: [], pagination: { current_page: 1, total_pages: 0, total_items: 0, items_per_page: 20, has_next: false, has_previous: false } });
-      })
-    );
-  }
-
-  getBookById(bookId: string): Observable<Book> {
-    return this.http.get<Book>(
-      `${this.BOOKS_API}/api/v1/books/${bookId}?tenant_id=${this.TENANT_ID}`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  searchByISBN(isbn: string): Observable<Book | null> {
-    return this.http.get<Book>(
-      `${this.BOOKS_API}/api/v1/books/by-isbn/${isbn}?tenant_id=${this.TENANT_ID}`,
-      { headers: this.getAuthHeaders() }
-    ).pipe(
-      catchError(error => {
-        console.error('Error searching by ISBN:', error);
-        return of(null);
-      })
-    );
-  }
-
-  searchBooks(query: string, fuzzyEnabled: boolean = false, page: number = 1, limit: number = 20): Observable<BookSearchResponse> {
-    let params = new HttpParams()
-      .set('tenant_id', this.TENANT_ID)
+      .set('tenant_id', 'tenant1')
       .set('q', query)
       .set('page', page.toString())
       .set('limit', limit.toString());
 
-    return this.http.get<BookSearchResponse>(
-      `${this.BOOKS_API}/api/v1/books/search`,
-      { params, headers: this.getAuthHeaders() }
-    ).pipe(
+    if (category && category.trim()) {
+      params = params.set('category', category);
+    }
+
+    const url = `${this.BOOKS_API}/api/v1/books/search`;
+    const fullUrl = `${url}?${params.toString()}`;
+
+    console.log('=== ELASTICSEARCH SEARCH BOOKS API CALL ===');
+    console.log('URL:', url);
+    console.log('Full URL:', fullUrl);
+    console.log('ElasticSearch IP (should be):', '44.222.79.214:9201');
+    console.log('Parameters:', {
+      tenant_id: 'tenant1',
+      q: query,
+      page: page,
+      limit: limit,
+      category: category || 'none'
+    });
+
+    // Use proper authentication headers as documented
+    const headers = this.getAuthHeaders();
+    console.log('Headers:', headers);
+
+    return this.http.get(url, { 
+      params,
+      headers: headers
+    }).pipe(
+      tap(response => {
+        console.log('=== ELASTICSEARCH SEARCH BOOKS API RESPONSE ===');
+        console.log('Response:', response);
+        console.log('Response type:', typeof response);
+        console.log('Is array:', Array.isArray(response));
+        if (response && typeof response === 'object') {
+          console.log('Response keys:', Object.keys(response));
+          if ((response as any).data) {
+            console.log('ElasticSearch data array length:', (response as any).data.length);
+            console.log('First ElasticSearch item:', (response as any).data[0]);
+          }
+        }
+      }),
       catchError(error => {
-        console.error('Error searching books:', error);
-        return of({ data: [], pagination: { current_page: 1, total_pages: 0, total_items: 0, items_per_page: 20, has_next: false, has_previous: false } });
+        console.error('=== ELASTICSEARCH SEARCH BOOKS API ERROR ===');
+        console.error('Error:', error);
+        console.error('Status:', error.status);
+        console.error('Status text:', error.statusText);
+        console.error('URL:', error.url);
+        console.error('Error response:', error.error);
+        console.error('ElasticSearch IP should be:', '44.222.79.214:9201');
+        
+        // Enhanced error logging for ElasticSearch issues
+        if (error.status === 502 || error.status === 503) {
+          console.error('ELASTICSEARCH CONNECTION ISSUE - Backend may need IP update to 44.222.79.214:9201');
+        } else if (error.status === 500) {
+          console.error('ELASTICSEARCH SERVER ERROR - Check backend ElasticSearch configuration');
+        }
+        
+        // Re-throw the error so the component can handle it
+        throw error;
       })
     );
   }
 
-  getAutocompleteSuggestions(query: string): Observable<BookSearchResponse> {
-    return this.searchBooks(query, false, 1, 5);
-  }
+  // Search book by ISBN - Enhanced for ElasticSearch
+  searchBookByISBN(isbn: string): Observable<any> {
+    const params = new HttpParams()
+      .set('tenant_id', 'tenant1');
 
-  searchByPrefix(query: string): Observable<BookSearchResponse> {
-    return this.searchBooks(query, false);
-  }
+    const url = `${this.BOOKS_API}/api/v1/books/by-isbn/${isbn}`;
+    const fullUrl = `${url}?${params.toString()}`;
 
-  getCategories(): Observable<{ categories: string[] }> {
-    return this.http.get<{ categories: string[] }>(
-      `${this.BOOKS_API}/api/v1/books/categories?tenant_id=${this.TENANT_ID}`,
-      { headers: this.getAuthHeaders() }
-    ).pipe(
+    console.log('=== ELASTICSEARCH ISBN SEARCH API CALL ===');
+    console.log('URL:', url);
+    console.log('Full URL:', fullUrl);
+    console.log('ISBN:', isbn);
+    console.log('ElasticSearch IP (should be):', '44.222.79.214:9201');
+    console.log('Parameters:', { tenant_id: 'tenant1' });
+
+    return this.http.get(url, { 
+      params,
+      headers: this.getAuthHeaders()
+    }).pipe(
+      tap(response => {
+        console.log('=== ELASTICSEARCH ISBN SEARCH API RESPONSE ===');
+        console.log('Response:', response);
+        console.log('ElasticSearch found ISBN:', isbn);
+      }),
       catchError(error => {
-        console.error('Error fetching categories:', error);
-        return of({ categories: ['Literatura', 'Technology', 'Ficción', 'Testing', 'Clásicos'] });
+        console.error('=== ELASTICSEARCH ISBN SEARCH API ERROR ===');
+        console.error('Error:', error);
+        console.error('Status:', error.status);
+        console.error('Status text:', error.statusText);
+        console.error('URL:', error.url);
+        console.error('Error response:', error.error);
+        console.error('ElasticSearch IP should be:', '44.222.79.214:9201');
+        
+        if (error.status === 404) {
+          console.log('ISBN not found in ElasticSearch:', isbn);
+          // Return null for not found instead of throwing error
+          return of(null);
+        }
+        
+        // Re-throw other errors so the component can handle them
+        throw error;
       })
     );
+  }
+
+  // Books API methods - Fixed to match documentation
+  getBooks(page: number = 1, limit: number = 20, category?: string, sortBy?: string): Observable<any> {
+    let params = new HttpParams()
+      .set('tenant_id', 'tenant1')
+      .set('page', page.toString())
+      .set('limit', limit.toString());
+
+    if (category && category.trim()) {
+      params = params.set('category', category);
+    }
+    if (sortBy && sortBy.trim()) {
+      params = params.set('sort', sortBy);
+    }
+
+    console.log('=== GET BOOKS API CALL ===');
+    console.log('Books API request params:', params.toString());
+
+    return this.http.get(`${this.BOOKS_API}/api/v1/books`, { 
+      params,
+      headers: this.getAuthHeaders()
+    }).pipe(
+      tap(response => {
+        console.log('=== GET BOOKS API RESPONSE ===');
+        console.log('Books API raw response:', response);
+      }),
+      catchError(error => {
+        console.error('=== GET BOOKS API ERROR ===');
+        console.error('Books API error:', error);
+        throw error;
+      })
+    );
+  }
+
+  getCategories(): Observable<any> {
+    const params = new HttpParams()
+      .set('tenant_id', 'tenant1');
+
+    return this.http.get(`${this.BOOKS_API}/api/v1/books/categories`, { 
+      params,
+      headers: this.getAuthHeaders()
+    }).pipe(
+      tap(response => {
+        console.log('Categories API response:', response);
+      }),
+      catchError(error => {
+        console.error('Categories API error:', error);
+        throw error;
+      })
+    );
+  }
+
+  getBookById(bookId: string): Observable<any> {
+    const params = new HttpParams()
+      .set('tenant_id', 'tenant1'); // Use tenant1 directly
+
+    return this.http.get(`${this.BOOKS_API}/api/v1/books/${bookId}`, { 
+      params,
+      headers: this.getAuthHeaders()
+    });
   }
 
   createBook(bookData: any): Observable<any> {
-    return this.http.post(
-      `${this.BOOKS_API}/api/v1/books?tenant_id=${this.TENANT_ID}`,
-      { ...bookData, tenant_id: this.TENANT_ID },
-      { headers: this.getAuthHeaders() }
-    );
+    const params = new HttpParams()
+      .set('tenant_id', 'tenant1'); // Use tenant1 directly
+
+    // Ensure tenant_id is included in the book data
+    const dataWithTenant = {
+      ...bookData,
+      tenant_id: 'tenant1'
+    };
+
+    return this.http.post(`${this.BOOKS_API}/api/v1/books`, dataWithTenant, { 
+      params,
+      headers: this.getAuthHeaders()
+    });
   }
 
   updateBook(bookId: string, bookData: any): Observable<any> {
-    return this.http.put(
-      `${this.BOOKS_API}/api/v1/books/${bookId}?tenant_id=${this.TENANT_ID}`,
-      bookData,
-      { headers: this.getAuthHeaders() }
-    );
+    const params = new HttpParams()
+      .set('tenant_id', 'tenant1'); // Use tenant1 directly
+
+    return this.http.put(`${this.BOOKS_API}/api/v1/books/${bookId}`, bookData, { 
+      params,
+      headers: this.getAuthHeaders()
+    });
   }
 
   deleteBook(bookId: string): Observable<any> {
-    return this.http.delete(
-      `${this.BOOKS_API}/api/v1/books/${bookId}?tenant_id=${this.TENANT_ID}`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
+    const params = new HttpParams()
+      .set('tenant_id', 'tenant1'); // Use tenant1 directly
 
-  getRecommendations(limit: number = 5): Observable<any> {
-    return this.http.get(
-      `${this.BOOKS_API}/api/v1/books/recommendations?tenant_id=${this.TENANT_ID}&limit=${limit}`,
-      { headers: this.getAuthHeaders() }
-    ).pipe(
-      catchError(error => {
-        console.error('Error fetching recommendations:', error);
-        return of({ recommendations: [], total: 0, based_on: 'rating' });
-      })
-    );
-  }
-
-  getAuthors(page: number = 1, limit: number = 20): Observable<any> {
-    return this.http.get(
-      `${this.BOOKS_API}/api/v1/books/authors?tenant_id=${this.TENANT_ID}&page=${page}&limit=${limit}`,
-      { headers: this.getAuthHeaders() }
-    ).pipe(
-      catchError(error => {
-        console.error('Error fetching authors:', error);
-        return of({ data: [], pagination: { current_page: 1, total_pages: 0, total_items: 0, items_per_page: 20, has_next: false, has_previous: false } });
-      })
-    );
+    return this.http.delete(`${this.BOOKS_API}/api/v1/books/${bookId}`, { 
+      params,
+      headers: this.getAuthHeaders()
+    });
   }
 
   // ========================
@@ -654,10 +749,16 @@ export class ApiService {
   // ========================
   private getAuthHeaders(): HttpHeaders {
     const token = localStorage.getItem('token');
-    return new HttpHeaders({
-      'Authorization': `Bearer ${token}`,
+    let headers = new HttpHeaders({
       'Content-Type': 'application/json'
     });
+    
+    if (token) {
+      headers = headers.set('Authorization', `Bearer ${token}`);
+    }
+    
+    console.log('Auth headers created with token:', token ? 'present' : 'missing');
+    return headers;
   }
 
   // Health check methods
@@ -671,5 +772,19 @@ export class ApiService {
 
   checkPurchasesApiHealth(): Observable<any> {
     return this.http.get(`${this.PURCHASES_API}/`);
+  }
+
+  // Add ElasticSearch health check method
+  checkElasticSearchHealth(): Observable<any> {
+    console.log('Checking ElasticSearch health at 44.222.79.214:9201');
+    // This would be used if we could directly connect to ElasticSearch
+    // For now, it's just for documentation purposes
+    return of({
+      message: 'ElasticSearch health check not directly accessible from frontend',
+      expected_ip: '44.222.79.214:9201',
+      tenant1_port: '9201',
+      tenant2_port: '9202',
+      note: 'Backend needs to be updated to use new IP'
+    });
   }
 }
